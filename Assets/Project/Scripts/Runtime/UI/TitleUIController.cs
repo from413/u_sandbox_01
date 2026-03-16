@@ -70,6 +70,7 @@ namespace MyGame.Runtime.UI
                     statusText.text = "Status: Connected!";
                     // 로비 진입 시 처리 (에: 캔버스 페이드 아웃 등)
                     // 연결 성공 시 페이드 아웃 시작
+                    StartCoroutine(FadeOutAndDisable());
                     break;
             }
         }

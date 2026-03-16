@@ -7,6 +7,7 @@ namespace MyGame.Runtime.Core
     {
         // 싱글톤 패턴
         public static GameManager Instance { get; private set; }
+
         // 변수명 컨벤션 (private은 _ 붙이기)
         private MyNetworkManager _NetworkMgr;
 
@@ -15,11 +16,8 @@ namespace MyGame.Runtime.Core
         // 상태 변경 시 UI나 다른 모듈에 알림
         public event Action<GameState> OnStateChanged;
 
-        private void Awake()
-        {
-            // 자동 할당
-            Instance = this;
-        }
+        private void Awake() => Instance = this; // 자동 할당
+
 
         void Start()
         {
@@ -77,6 +75,7 @@ namespace MyGame.Runtime.Core
         private void EnterInGame()
         {
             ChangeState(GameState.InGame);
+            // Debug.Log("GameManager: InGame 상태로 진입했습니다!");
         }
     }
 }

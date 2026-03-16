@@ -9,6 +9,7 @@ namespace MyGame.Runtime.UI
     {
         // 변수명 컨벤션 (private은 _ 붙이기)
         private GameManager _gameMgr;
+        private MyNetworkManager _NetworkMgr;
         private CanvasGroup _canvasGroup; // 페이드용
 
         [Header("UI Elements")]
@@ -26,6 +27,7 @@ namespace MyGame.Runtime.UI
         {
             // 싱글톤 패턴 (캐싱)
             _gameMgr = GameManager.Instance;
+            _NetworkMgr = MyNetworkManager.Instance;
 
             if (_gameMgr != null)
             {
@@ -67,7 +69,10 @@ namespace MyGame.Runtime.UI
                     if (loadingSpinner) loadingSpinner.SetActive(true);
                     break;
                 case GameState.Lobby:
-                    statusText.text = "Status: Connected!";
+                    if (_NetworkMgr.LocalSession != null)
+                    {
+                        statusText.text = $"Welcome, {_NetworkMgr.LocalSession.Nickname}!\n(ID: {_NetworkMgr.LocalSession.PlayerId})";
+                    }
                     // 로비 진입 시 처리 (에: 캔버스 페이드 아웃 등)
                     // 연결 성공 시 페이드 아웃 시작
                     StartCoroutine(FadeOutAndDisable());

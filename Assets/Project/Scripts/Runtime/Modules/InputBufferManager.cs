@@ -1,0 +1,76 @@
+using UnityEngine;
+using System.Collections.Generic;
+using MyGame.Runtime.Core;
+
+namespace MyGame.Runtime.Modules
+{
+    public class InputBufferManager : MonoBehaviour
+    {
+        // 싱글톤 패턴
+        public static InputBufferManager Instance { get; private set; }
+
+        // 변수명 컨벤션 (private은 _ 붙이기)
+        private GameManager _gameMgr;
+        private MyNetworkManager _NetworkMgr;
+        private ActorController _localActor;
+
+        private Queue<InputPacket> _inputBuffer = new Queue<InputPacket>();
+        private uint _currentTick = 0;
+
+        private void Awake() => Instance = this;
+
+        public void RegisterLocalActor(ActorController actor)
+        {
+            _localActor = actor;
+        }
+
+        void Start()
+        {
+            _gameMgr = GameManager.Instance;
+            _NetworkMgr = MyNetworkManager.Instance;
+        }
+
+        void Update()
+        {
+            // InGame 상태에서만 입력을 수집
+            if (_gameMgr.CurrentState != GameState.InGame) return;
+
+            CollectInput();
+        }
+
+        private void CollectInput()
+        {
+            _currentTick++;
+
+            float h = Input.GetAxisRaw("Horizontal");
+            float v = Input.GetAxisRaw("Vertical");
+            bool jump = Input.GetKeyDown(KeyCode.Space);
+
+            // 로컬 세션 ID 가져오기
+            string PlayerId = _NetworkMgr.LocalSession.PlayerId;
+
+            // 패킷 생성
+            InputPacket packet = new InputPacket(PlayerId, ++_currentTick, h, v, jump);
+
+            // 1. 서버 전송용 버퍼에 저장 (나중에 서버로 한꺼번에 보내거나 클라이언트 예측에 사용)
+            _inputBuffer.Enqueue(packet);
+
+            // 2. [로컬 예측] 서버 응답 전, 내 화면의 캐릭터에게 즉시 적용
+            if (_localActor != null)
+            {
+                _localActor.ApplyInput(packet);
+            }
+
+            if (h != 0 || v != 0 || jump)
+            {
+                Debug.Log($"[Tick:{_currentTick}] 입력 감지 - H:{h}, V:{v}, Jump:{jump}");
+            }
+        }
+
+        // 서버로 보낼 패킷들을 꺼내오는 메서드 (나중에 사용)
+        public InputPacket GetNextPacket()
+        {
+            return _inputBuffer.Count > 0 ? _inputBuffer.Dequeue() : default;
+        }
+    }
+}

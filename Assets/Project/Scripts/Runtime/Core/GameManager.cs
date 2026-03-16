@@ -69,6 +69,14 @@ namespace MyGame.Runtime.Core
 
             // 연결 성공 시 Lobby 상태로 전이
             ChangeState(GameState.Lobby);
+
+            // 로비 연출(페이드 등)이 끝날 시간을 고려해 1.5초 후 InGame으로 변경
+            Invoke(nameof(EnterInGame), 1.5f);
+        }
+
+        private void EnterInGame()
+        {
+            ChangeState(GameState.InGame);
         }
     }
 }

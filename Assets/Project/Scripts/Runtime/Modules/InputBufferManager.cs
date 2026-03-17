@@ -35,6 +35,21 @@ namespace MyGame.Runtime.Modules
             _gameMgr = GameManager.Instance;
             _NetworkMgr = MyNetworkManager.Instance;
 
+            if (_NetworkMgr != null)
+            {
+                _NetworkMgr.OnServerStateReceived += HandleServerState;
+            }
+
+            // 네트워크 송신 루프 시작
+            StartCoroutine(NetworkSendLoop());
+        }
+
+        private void OnDestroy()
+        {
+            if (_NetworkMgr != null)
+            {
+                _NetworkMgr.OnServerStateReceived -= HandleServerState;
+            }
         }
 
         void Update()
@@ -54,10 +69,10 @@ namespace MyGame.Runtime.Modules
             bool jump = Input.GetKeyDown(KeyCode.Space);
 
             // 로컬 세션 ID 가져오기
-            string PlayerId = _NetworkMgr.LocalSession.PlayerId;
+            string playerId = _NetworkMgr.LocalSession.PlayerId;
 
             // 패킷 생성
-            InputPacket packet = new InputPacket(PlayerId, ++_currentTick, h, v, jump);
+            InputPacket packet = new InputPacket(playerId, _currentTick, h, v, jump);
 
             // 1. 서버 전송용 버퍼에 저장 (나중에 서버로 한꺼번에 보내거나 클라이언트 예측에 사용)
             _inputBuffer.Enqueue(packet);
@@ -83,6 +98,8 @@ namespace MyGame.Runtime.Modules
                 {
                     SendBufferedPackets();
                 }
+
+                yield return new WaitForSeconds(sendInterval);
             }
         }
 
@@ -97,8 +114,13 @@ namespace MyGame.Runtime.Modules
                 packetsToSend.Add(_inputBuffer.Dequeue());
             }
 
-            // [네트워크 전송 시뮬레이션]
-            // 실제로는 NetworkManager.Instance.SendToServer(packetsToSend) 호출
+            // JSON 변환 (네트워크 레이어가 InputPacket 타입을 알 필요가 없도록 추상화)
+            InputPacketBatch batch = new InputPacketBatch { Packets = packetsToSend };
+            string json = JsonUtility.ToJson(batch);
+
+            // 시뮬레이션: 로컬 서버에 전달
+            _NetworkMgr?.SendRawPacket(json);
+
             Debug.Log($"[Network] 서버로 {packetsToSend.Count}개의 패킷 전송 (최신 Tick: {packetsToSend[^1].Tick})");
         }
 
@@ -106,6 +128,15 @@ namespace MyGame.Runtime.Modules
         public InputPacket GetNextPacket()
         {
             return _inputBuffer.Count > 0 ? _inputBuffer.Dequeue() : default;
+        }
+
+        // 서버의 공인 상태를 받아서 로컬 예측을 보정
+        private void HandleServerState(ServerStatePacket state)
+        {
+            if (_localActor == null || state.PlayerId != _NetworkMgr.LocalSession.PlayerId) return;
+
+            // 간단한 보정: 서버 위치를 그대로 적용
+            _localActor.transform.position = state.Position;
         }
     }
 }

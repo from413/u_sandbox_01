@@ -14,7 +14,34 @@ namespace MyGame.Server
         private Dictionary<string, Vector3> _playerPositions = new Dictionary<string, Vector3>();
         private float _serverMoveSpeed = 5f;
 
-        private void Awake() => Instance = this;
+        private void Awake()
+        {
+            Instance = this;
+
+            // 로컬 네트워크 시뮬레이션: Raw JSON 패킷을 받아서 처리
+            if (MyNetworkManager.Instance != null)
+            {
+                MyNetworkManager.Instance.OnRawPacketSent += HandleRawPacket;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (MyNetworkManager.Instance != null)
+            {
+                MyNetworkManager.Instance.OnRawPacketSent -= HandleRawPacket;
+            }
+        }
+
+        private void HandleRawPacket(string json)
+        {
+            // JSON -> InputPacket 리스트 변환
+            var batch = JsonUtility.FromJson<InputPacketBatch>(json);
+            if (batch == null || batch.Packets == null || batch.Packets.Count == 0)
+                return;
+
+            ReceiveInputFromClient(batch.Packets);
+        }
 
         // 클라이언트(InputBufferManager)로부터 패킷 수신 (시뮬레이션)
         public void ReceiveInputFromClient(List<InputPacket> packets)
@@ -51,10 +78,13 @@ namespace MyGame.Server
         {
             ServerStatePacket state = new ServerStatePacket(playerId, tick, _playerPositions[playerId]);
 
-            // 모든 클라이언트에게 이 정보를 보냄 (지금은 로컬 매니저에 전달)
-            // NetworkManager.Instance.OnServerStateReceived(state);
-            Debug.Log($"[Server] Tick:{tick} 처리 완료 -> 위치:{state.Position}");
+            // 모든 클라이언트에게 이 정보를 보냄 (지금은 로컬 네트워크 매니저를 통해 전달)
+            if (MyNetworkManager.Instance != null)
+            {
+                MyNetworkManager.Instance.ReceiveServerState(state);
+            }
 
+            Debug.Log($"[Server] Tick:{tick} 처리 완료 -> 위치:{state.Position}");
         }
     }
 }

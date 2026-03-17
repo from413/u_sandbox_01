@@ -15,12 +15,29 @@ namespace MyGame.Runtime.Core
         // 연결 완료 시 발생할 이벤트
         public event Action OnConnectionSuccess;
 
+        // 실제 네트워크 전송은 문자열(예: JSON)로 추상화
+        public event Action<string> OnRawPacketSent;
+        public event Action<ServerStatePacket> OnServerStateReceived;
+
         private void Awake() => Instance = this;
+
         public void ConnectToServer()
         {
             Debug.Log("서버와 핸드셰이크 시도 중...");
             // 실제 네트워크 라이브러리(Mirror, Netcode 등) 대신 코루틴으로 시뮬레이션
             StartCoroutine(SimulateConnection());
+        }
+
+        public void SendRawPacket(string json)
+        {
+            Debug.Log($"[Network] Raw packet sent: {json}");
+            OnRawPacketSent?.Invoke(json);
+        }
+
+        public void ReceiveServerState(ServerStatePacket state)
+        {
+            Debug.Log($"[Network] Server state received: {state.PlayerId} Tick:{state.LastProcessedTick} Pos:{state.Position}");
+            OnServerStateReceived?.Invoke(state);
         }
 
         private IEnumerator SimulateConnection()

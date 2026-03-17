@@ -9,6 +9,8 @@ namespace MyGame.Runtime.Core
         // 싱글톤
         public static MyNetworkManager Instance { get; private set; }
 
+        private MyNetworkLatencySimulator _latencySimulator;
+
         // 로컬 플레이어의 세션 정보 저장소
         public PlayerSession LocalSession { get; private set; }
 
@@ -21,6 +23,11 @@ namespace MyGame.Runtime.Core
 
         private void Awake() => Instance = this;
 
+        void Start()
+        {
+            _latencySimulator = MyNetworkLatencySimulator.Instance;
+        }
+
         public void ConnectToServer()
         {
             Debug.Log("서버와 핸드셰이크 시도 중...");
@@ -31,13 +38,37 @@ namespace MyGame.Runtime.Core
         public void SendRawPacket(string json)
         {
             Debug.Log($"[Network] Raw packet sent: {json}");
-            OnRawPacketSent?.Invoke(json);
+
+            // 지연 시뮬레이터가 있으면 지연을 적용하고, 없으면 즉시 전송
+            if (_latencySimulator != null)
+            {
+                _latencySimulator.EnqueueDelayedPacket(() =>
+                {
+                    OnRawPacketSent?.Invoke(json);
+                });
+            }
+            else
+            {
+                OnRawPacketSent?.Invoke(json);
+            }
         }
 
         public void ReceiveServerState(ServerStatePacket state)
         {
             Debug.Log($"[Network] Server state received: {state.PlayerId} Tick:{state.LastProcessedTick} Pos:{state.Position}");
-            OnServerStateReceived?.Invoke(state);
+
+            // 지연 시뮬레이터가 있으면 지연을 적용
+            if (_latencySimulator != null)
+            {
+                _latencySimulator.EnqueueDelayedPacket(() =>
+                {
+                    OnServerStateReceived?.Invoke(state);
+                });
+            }
+            else
+            {
+                OnServerStateReceived?.Invoke(state);
+            }
         }
 
         private IEnumerator SimulateConnection()

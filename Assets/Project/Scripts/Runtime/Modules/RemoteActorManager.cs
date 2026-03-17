@@ -12,7 +12,7 @@ namespace MyGame.Runtime.Modules
     {
         [SerializeField] private GameObject remotePlayerPrefab;
 
-        private MyNetworkManager _networkMgr;
+        private MyNetworkManager _NetworkMgr;
         private string _localPlayerId;
 
         // 원격 플레이어 목록
@@ -20,30 +20,30 @@ namespace MyGame.Runtime.Modules
 
         private void Start()
         {
-            _networkMgr = MyNetworkManager.Instance;
-            if (_networkMgr == null) return;
+            _NetworkMgr = MyNetworkManager.Instance;
+            if (_NetworkMgr == null) return;
 
-            _networkMgr.OnServerStateReceived += HandleServerState;
-            _networkMgr.OnConnectionSuccess += HandleConnectionSuccess;
+            _NetworkMgr.OnServerStateReceived += HandleServerState;
+            _NetworkMgr.OnConnectionSuccess += HandleConnectionSuccess;
 
-            if (_networkMgr.LocalSession != null)
-                _localPlayerId = _networkMgr.LocalSession.PlayerId;
+            if (_NetworkMgr.LocalSession != null)
+                _localPlayerId = _NetworkMgr.LocalSession.PlayerId;
         }
 
         private void OnDestroy()
         {
-            if (_networkMgr != null)
+            if (_NetworkMgr != null)
             {
-                _networkMgr.OnServerStateReceived -= HandleServerState;
-                _networkMgr.OnConnectionSuccess -= HandleConnectionSuccess;
+                _NetworkMgr.OnServerStateReceived -= HandleServerState;
+                _NetworkMgr.OnConnectionSuccess -= HandleConnectionSuccess;
             }
         }
 
         private void HandleConnectionSuccess()
         {
-            if (_networkMgr.LocalSession != null)
+            if (_NetworkMgr.LocalSession != null)
             {
-                _localPlayerId = _networkMgr.LocalSession.PlayerId;
+                _localPlayerId = _NetworkMgr.LocalSession.PlayerId;
             }
         }
 

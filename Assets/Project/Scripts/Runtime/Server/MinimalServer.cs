@@ -10,6 +10,8 @@ namespace MyGame.Server
         // 싱글톤 패턴
         public static MinimalServer Instance { get; private set; }
 
+        private MyNetworkManager _NetworkMgr;
+
         // 서버가 관리하는 플레이어들의 공인(Authoritative) 위치
         private Dictionary<string, Vector3> _playerPositions = new Dictionary<string, Vector3>();
         private float _serverMoveSpeed = 5f;
@@ -19,17 +21,22 @@ namespace MyGame.Server
             Instance = this;
 
             // 로컬 네트워크 시뮬레이션: Raw JSON 패킷을 받아서 처리
-            if (MyNetworkManager.Instance != null)
+            if (_NetworkMgr != null)
             {
-                MyNetworkManager.Instance.OnRawPacketSent += HandleRawPacket;
+                _NetworkMgr.OnRawPacketSent += HandleRawPacket;
             }
+        }
+
+        void Start()
+        {
+            _NetworkMgr = MyNetworkManager.Instance;
         }
 
         private void OnDestroy()
         {
-            if (MyNetworkManager.Instance != null)
+            if (_NetworkMgr != null)
             {
-                MyNetworkManager.Instance.OnRawPacketSent -= HandleRawPacket;
+                _NetworkMgr.OnRawPacketSent -= HandleRawPacket;
             }
         }
 
@@ -79,9 +86,9 @@ namespace MyGame.Server
             ServerStatePacket state = new ServerStatePacket(playerId, tick, _playerPositions[playerId]);
 
             // 모든 클라이언트에게 이 정보를 보냄 (지금은 로컬 네트워크 매니저를 통해 전달)
-            if (MyNetworkManager.Instance != null)
+            if (_NetworkMgr != null)
             {
-                MyNetworkManager.Instance.ReceiveServerState(state);
+                _NetworkMgr.ReceiveServerState(state);
             }
 
             Debug.Log($"[Server] Tick:{tick} 처리 완료 -> 위치:{state.Position}");

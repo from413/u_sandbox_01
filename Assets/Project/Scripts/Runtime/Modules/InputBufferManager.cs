@@ -15,13 +15,19 @@ namespace MyGame.Runtime.Modules
         private MyNetworkManager _NetworkMgr;
         private ActorController _localActor;
 
-
         private Queue<InputPacket> _inputBuffer = new Queue<InputPacket>();
+        private List<InputHistoryEntry> _inputHistory = new List<InputHistoryEntry>(); // 서버 보정용 히스토리
         private uint _currentTick = 0;
+
+        [SerializeField] private float moveSpeed = 5f; // 로컬 예측 계산용
 
         [Header("Network Settings")]
         [SerializeField] private float sendInterval = 0.033f; // 30 FPS (Tick Rate)
-        private float _lastSendTime;
+        
+        [Header("Correction Settings")]
+        [SerializeField] private float _correctionSmoothTime = 0.2f; // 보정을 얼마나 부드럽게 할지 (초)
+        private Vector3 _correctionVelocity = Vector3.zero;
+        private Vector3 _targetPosition = Vector3.zero;
 
         private void Awake() => Instance = this;
 
@@ -58,6 +64,14 @@ namespace MyGame.Runtime.Modules
             if (_gameMgr.CurrentState != GameState.InGame) return;
 
             CollectInput();
+
+            // 보정 적용
+            if (_localActor != null && _correctionSmoothTime > 0)
+            {
+                Vector3 current = _localActor.transform.position;
+                Vector3 smoothed = Vector3.SmoothDamp(current, _targetPosition, ref _correctionVelocity, _correctionSmoothTime);
+                _localActor.transform.position = smoothed;
+            }
         }
 
         private void CollectInput()
@@ -74,13 +88,20 @@ namespace MyGame.Runtime.Modules
             // 패킷 생성
             InputPacket packet = new InputPacket(playerId, _currentTick, h, v, jump);
 
-            // 1. 서버 전송용 버퍼에 저장 (나중에 서버로 한꺼번에 보내거나 클라이언트 예측에 사용)
+            // 1. 서버 전송용 버퍼에 저장
             _inputBuffer.Enqueue(packet);
 
             // 2. [로컬 예측] 서버 응답 전, 내 화면의 캐릭터에게 즉시 적용
             if (_localActor != null)
             {
                 _localActor.ApplyInput(packet);
+                
+                // 입력 히스토리에 저장 (서버 보정용)
+                var entry = new InputHistoryEntry(_currentTick, packet, _localActor.transform.position);
+                _inputHistory.Add(entry);
+                
+                // 목표 위치 업데이트
+                _targetPosition = _localActor.transform.position;
             }
 
             if (h != 0 || v != 0 || jump)
@@ -124,7 +145,7 @@ namespace MyGame.Runtime.Modules
             Debug.Log($"[Network] 서버로 {packetsToSend.Count}개의 패킷 전송 (최신 Tick: {packetsToSend[^1].Tick})");
         }
 
-        // 서버로 보낼 패킷들을 꺼내오는 메서드 (나중에 사용)
+        // 서버로 보낼 패킷들을 꺼내오는 메서드
         public InputPacket GetNextPacket()
         {
             return _inputBuffer.Count > 0 ? _inputBuffer.Dequeue() : default;
@@ -135,8 +156,17 @@ namespace MyGame.Runtime.Modules
         {
             if (_localActor == null || state.PlayerId != _NetworkMgr.LocalSession.PlayerId) return;
 
-            // 간단한 보정: 서버 위치를 그대로 적용
-            _localActor.transform.position = state.Position;
+            // 서버로부터 받은 공인 위치
+            Vector3 serverAuthPosition = state.Position;
+            Vector3 currentPredictedPosition = _localActor.transform.position;
+
+            // 오차 계산
+            float positionError = Vector3.Distance(currentPredictedPosition, serverAuthPosition);
+
+            // 서버 위치를 목표로 설정 (SmoothDamp로 부드럽게 보정)
+            _targetPosition = serverAuthPosition;
+
+            Debug.Log($"[Correction] Tick:{state.LastProcessedTick} / Predicted:{currentPredictedPosition} / Server:{serverAuthPosition} / Error:{positionError:F3}");
         }
     }
 }

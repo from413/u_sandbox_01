@@ -18,5 +18,11 @@ namespace MyGame.Runtime.Modules
                 // Rigidbody 점프 로직 등을 여기에 추가 가능
             }
         }
+
+        // 서버/네트워크에서 전달된 공인 위치를 설정할 때 사용 (원격 플레이어 보정)
+        public void SetPosition(Vector3 position)
+        {
+            transform.position = position;
+        }
     }
 }

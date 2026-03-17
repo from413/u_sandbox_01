@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Collections;
 using MyGame.Runtime.Core;
 
 namespace MyGame.Runtime.Modules
@@ -14,8 +15,13 @@ namespace MyGame.Runtime.Modules
         private MyNetworkManager _NetworkMgr;
         private ActorController _localActor;
 
+
         private Queue<InputPacket> _inputBuffer = new Queue<InputPacket>();
         private uint _currentTick = 0;
+
+        [Header("Network Settings")]
+        [SerializeField] private float sendInterval = 0.033f; // 30 FPS (Tick Rate)
+        private float _lastSendTime;
 
         private void Awake() => Instance = this;
 
@@ -28,6 +34,7 @@ namespace MyGame.Runtime.Modules
         {
             _gameMgr = GameManager.Instance;
             _NetworkMgr = MyNetworkManager.Instance;
+
         }
 
         void Update()
@@ -65,6 +72,34 @@ namespace MyGame.Runtime.Modules
             {
                 Debug.Log($"[Tick:{_currentTick}] 입력 감지 - H:{h}, V:{v}, Jump:{jump}");
             }
+        }
+
+        private IEnumerator NetworkSendLoop()
+        {
+            while (true)
+            {
+                // InGame 상태일 때만 전송 루프 가동
+                if (_gameMgr.CurrentState == GameState.InGame)
+                {
+                    SendBufferedPackets();
+                }
+            }
+        }
+
+        private void SendBufferedPackets()
+        {
+            if (_inputBuffer.Count == 0) return;
+
+            // 현재 버퍼에 쌓인 모든 패킷을 리스트로 묶음 (Batching)
+            List<InputPacket> packetsToSend = new List<InputPacket>();
+            while (_inputBuffer.Count > 0)
+            {
+                packetsToSend.Add(_inputBuffer.Dequeue());
+            }
+
+            // [네트워크 전송 시뮬레이션]
+            // 실제로는 NetworkManager.Instance.SendToServer(packetsToSend) 호출
+            Debug.Log($"[Network] 서버로 {packetsToSend.Count}개의 패킷 전송 (최신 Tick: {packetsToSend[^1].Tick})");
         }
 
         // 서버로 보낼 패킷들을 꺼내오는 메서드 (나중에 사용)

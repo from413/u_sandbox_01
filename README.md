@@ -2,46 +2,53 @@
 
 ---
 
-## ✅ 최근 변경 사항
+## ✅ 최신 변경 사항 (실시간 멀티플레이 계속 개발)
 
-- **RemotePlayerTester 추가**: 서버 입력 큐(MinimalServer._incomingPackets)가 정상적으로 채워지는지 확인할 수 있는 가상 클라이언트를 구현했습니다.
-  - 설정된 숫자만큼 봇을 생성하고, 주기적으로 랜덤 입력을 서버에 전송합니다.
-  - 연결/끊김(Churn) 시나리오를 시뮬레이션하여 서버 측 입력 흐름을 스트레스 테스트할 수 있습니다.
-- **기존 네트워크 흐름 유지**: InputBufferManager의 로컬 예측, 보정, 서버 패킷 송수신 로직은 그대로 두어 기존 플레이어 제어 흐름에 영향을 주지 않습니다.
-
----
-
-## 🛠 Unity에서 필요한 작업 (최신)
-
-### 1) 씬 구성 확인
-- **MyNetworkManager**, **MinimalServer**, **RemoteActorManager**가 모두 씬에 존재해야 합니다.
-- **RemotePlayerTester**를 테스트하려면 빈 GameObject를 만들고 해당 컴포넌트를 붙이세요.
-
-### 2) 프리팹 / 참조 연결
-- RemoteActorManager.remotePlayerPrefab에 원격 플레이어용 프리팹을 연결하세요.
-- 로컬 플레이어 프리팹은 ActorSpawner.playerPrefab에 연결하세요.
-
-### 3) 실행 흐름
-1. 플레이 모드로 실행합니다.
-2. 아무 키를 누르면 네트워크 연결 시뮬레이션이 시작되고, GameState가 InGame으로 전환됩니다.
-3. 로컬 플레이어 캐릭터가 스폰되고, 서버가 주기적으로 상태를 브로드캐스트합니다.
-4. RemotePlayerTester가 활성화되어 있다면 추가 봇이 입력을 서버에 전송하며 서버 큐가 채워지는지를 확인할 수 있습니다.
+- **패킷 손실 시뮬레이션 추가**: `MyNetworkLatencySimulator`에 손실율 및 드롭 통계가 도입되어 네트워크 품질 저하 상황을 테스트할 수 있습니다.
+- **진단 UI 확장**: `NetworkDiagnostics`에 패킷 손실 통계가 추가되어 RTT / 보정 오류 / 패킷 통계와 함께 확인 가능합니다.
+- **기존 흐름 유지**: 로컬 예측, 보정, 서버 권위 상태 브로드캐스트, 원격 플레이어 보간은 기존 구조를 그대로 유지하면서 더 안정적으로 동작합니다.
 
 ---
 
-## 🧪 확인할 핵심 포인트
+## 🛠 Unity에서 해야 할 작업 (최신)
 
-- **서버 입력 큐**: MinimalServer._incomingPackets가 주기적으로 증가하는지 확인 (로그/디버거).
-- **로컬 예측 + 보정**: 로컬 입력이 즉시 적용되며, 서버에서 전달된 상태로 보정되는지 확인.
-- **원격 플레이어 렌더링**: RemoteActorManager가 서버에서 보내는 상태를 수신해 봇을 생성/보간하는지 확인.
-- **진단 UI**: NetworkDiagnostics의 Show Diagnostics UI를 켜면 RTT, 보정 오류, 패킷 통계가 표시됩니다.
+1. **씬에 필요한 오브젝트 확인**
+   - `MyNetworkManager`, `MinimalServer`, `InputBufferManager`, `RemoteActorManager`, `ActorSpawner`, `NetworkDiagnostics`, `MyNetworkLatencySimulator` 등이 씬에 존재해야 합니다.
+   - `RemotePlayerTester`를 사용하려면 빈 GameObject를 만들고 컴포넌트를 추가하세요.
+
+2. **프리팹/참조 연결**
+   - `RemoteActorManager.remotePlayerPrefab`에 원격 플레이어 프리팹을 연결합니다.
+   - `ActorSpawner.playerPrefab`에 로컬 플레이어 프리팹을 연결합니다.
+   - (선택) `NetworkDiagnostics`의 `Show Diagnostics UI`를 켜면 즉시 네트워크 상태를 확인할 수 있습니다.
+
+3. **네트워크 시뮬레이션 설정**
+   - 씬의 `MyNetworkLatencySimulator`에서 `Base Latency`, `Latency Variance`를 조정합니다.
+   - `Enable Packet Loss`를 활성화하고 `Packet Loss Rate`를 설정하면 패킷 드롭을 시뮬레이션할 수 있습니다.
+   - `RemotePlayerTester`를 키면 봇이 입력을 서버에 전송하며 서버 큐 작동 여부를 확인할 수 있습니다.
 
 ---
 
-## 📌 앞으로의 작업 (로드맵)
+## 🧪 확인 포인트 (테스트 체크리스트)
 
-- **ACK/재전송**: 패킷 손실 시 재전송 로직 추가
-- **틱 동기화**: 클라이언트/서버 간 틱 동기화를 구현하여 입력 시점 일관성 향상
-- **대역폭 최적화**: 상태 차분 전송, 회전 압축, 패킷 배치 등
+- **로그 확인**
+  - `MyNetworkManager`가 연결 성공 후 `OnConnectionSuccess`를 호출하는지.
+  - `MinimalServer`가 클라이언트 입력을 정상적으로 처리하고 상태 브로드캐스트 로그를 출력하는지.
+  - 패킷 손실 시에도 게임이 멈추지 않고 보정/예측이 지속되는지.
+
+- **원격 플레이어 동작 확인**
+  - `RemoteActorManager`가 서버 상태를 받아 원격 플레이어를 생성/보간하는지.
+  - 업데이트가 없을 때 (연결 끊김) 8초 뒤 원격 플레이어가 삭제되는지.
+
+- **진단 UI 확인**
+  - `NetworkDiagnostics` UI에서 RTT, 송/수신/손실 패킷, 보정 오류가 표시되는지.
+  - `MyNetworkLatencySimulator` 설정 변경이 RTT/손실 통계에 반영되는지.
+
+---
+
+## 📌 다음 작업 (로드맵)
+
+- **ACK/재전송 + Sequencing**: 손실된 입력 패킷 재전송/재정렬 로직 추가
+- **틱 동기화 (Tick Sync)**: 서버/클라이언트 틱을 일치시키는 네트워크 타임 소유성 구현
+- **대역폭 최적화**: 상태 차분 전송, 회전 압축, 메시지 배치 개선
 
 ---

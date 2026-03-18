@@ -34,6 +34,7 @@ namespace MyGame.Runtime.Core
         // 패킷 송신 추적
         private int _totalPacketsSent = 0;
         private int _totalPacketsReceived = 0;
+        private int _totalPacketsDropped = 0;
 
         private void Awake()
         {
@@ -52,7 +53,7 @@ namespace MyGame.Runtime.Core
             GUILayout.BeginArea(new Rect(10, 10, 300, 250), GUI.skin.box);
             GUILayout.Label("📊 네트워크 진단", GUI.skin.label);
             GUILayout.Label($"RTT: {_currentRTT * 1000:F1}ms (평균: {_averageRTT * 1000:F1}ms)", GUI.skin.label);
-            GUILayout.Label($"패킷: 송신 {_totalPacketsSent} / 수신 {_totalPacketsReceived}", GUI.skin.label);
+            GUILayout.Label($"패킷: 송신 {_totalPacketsSent} / 수신 {_totalPacketsReceived} / 손실 {_totalPacketsDropped}", GUI.skin.label);
             GUILayout.Label($"보정 오류: {_avgCorrectionError:F3}m (최대: {_maxCorrectionError:F3}m)", GUI.skin.label);
             GUILayout.Label($"입력 지연: {_inputLatency * 1000:F1}ms", GUI.skin.label);
 
@@ -125,6 +126,15 @@ namespace MyGame.Runtime.Core
         }
 
         /// <summary>
+        /// 패킷 손실/드롭을 기록합니다.
+        /// </summary>
+        public void RecordPacketDropped(int count = 1)
+        {
+            if (!_enableDiagnostics) return;
+            _totalPacketsDropped += count;
+        }
+
+        /// <summary>
         /// 최신 RTT 값을 밀리초 단위로 반환합니다 (동적 보간 속도 조정용).
         /// </summary>
         public float GetLatestRTT()
@@ -163,6 +173,7 @@ namespace MyGame.Runtime.Core
             Debug.Log($"패킷 통계:");
             Debug.Log($"  송신: {_totalPacketsSent}");
             Debug.Log($"  수신: {_totalPacketsReceived}");
+            Debug.Log($"  손실: {_totalPacketsDropped}");
             Debug.Log($"");
             Debug.Log($"입력 지연:");
             Debug.Log($"  현재: {_inputLatency * 1000:F2}ms");

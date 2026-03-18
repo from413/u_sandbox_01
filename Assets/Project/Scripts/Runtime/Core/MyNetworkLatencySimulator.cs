@@ -18,6 +18,10 @@ namespace MyGame.Runtime.Core
         [SerializeField] private float baseLatency = 0.05f; // 기본 지연 (초) - 기본 50ms
         [SerializeField] private float latencyVariance = 0.01f; // 지연 변동폭 (기본 ±10ms)
 
+        [Header("Packet Loss Simulation")]
+        [SerializeField] private bool enablePacketLoss = false;
+        [SerializeField, Range(0f, 1f)] private float packetLossRate = 0.0f; // 0~1
+
         [Header("Debug Settings")]
         [SerializeField] private bool _enableLatencyLogging = false;
 
@@ -26,6 +30,7 @@ namespace MyGame.Runtime.Core
         // 성능 통계
         private float _totalLatency = 0f;
         private int _processedPackets = 0;
+        private int _droppedPackets = 0;
         private float _maxLatency = 0f;
         private float _minLatency = float.MaxValue;
 
@@ -38,6 +43,10 @@ namespace MyGame.Runtime.Core
         private void Start()
         {
             Debug.Log($"[Network Simulator] 지연 설정: {baseLatency * 1000:F1}ms ± {latencyVariance * 1000:F1}ms");
+            if (enablePacketLoss)
+            {
+                Debug.Log($"[Network Simulator] 패킷 손실 시뮬레이션 활성화: {packetLossRate * 100f:F1}%");
+            }
         }
 
         private void Update()
@@ -52,6 +61,20 @@ namespace MyGame.Runtime.Core
         public void EnqueueDelayedPacket(Action callback)
         {
             if (callback == null) return;
+
+            // 패킷 손실 시뮬레이션
+            if (enablePacketLoss && UnityEngine.Random.value < packetLossRate)
+            {
+                _droppedPackets++;
+                NetworkDiagnostics.Instance?.RecordPacketDropped();
+
+                if (_enableLatencyLogging)
+                {
+                    Debug.Log($"[Latency] 패킷 손실 (LossRate:{packetLossRate * 100f:F1}%)");
+                }
+
+                return;
+            }
 
             // 지연값 계산 (밀리초 변환 후 다시 초로)
             float randomLatency = baseLatency + UnityEngine.Random.Range(-latencyVariance, latencyVariance);
@@ -116,6 +139,7 @@ namespace MyGame.Runtime.Core
             Debug.Log($"최소 지연: {(_minLatency == float.MaxValue ? 0 : _minLatency * 1000):F2}ms");
             Debug.Log($"최대 지연: {_maxLatency * 1000:F2}ms");
             Debug.Log($"대기 중인 패킷: {_delayedPackets.Count}");
+            Debug.Log($"손실된 패킷: {_droppedPackets} (LossRate:{( _delayedPackets.Count + _processedPackets + _droppedPackets > 0 ? (_droppedPackets * 100f / (_delayedPackets.Count + _processedPackets + _droppedPackets)) : 0f):F1}%)");
             Debug.Log($"설정: {baseLatency * 1000:F1}ms ± {latencyVariance * 1000:F1}ms");
         }
 

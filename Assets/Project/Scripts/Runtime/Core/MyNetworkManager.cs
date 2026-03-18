@@ -58,6 +58,7 @@ namespace MyGame.Runtime.Core
 
         public void ReceiveServerState(ServerStatePacket state)
         {
+            Debug.Log($"[NetworkManager] Server state 데이터 수신: {state}"); // 이 로그가 찍히는지 확인
             Debug.Log($"[Network] Server state received: {state.PlayerId} Tick:{state.LastProcessedTick} Pos:{state.Position}");
 
             // 지연 시뮬레이터가 있으면 지연을 적용
@@ -83,7 +84,7 @@ namespace MyGame.Runtime.Core
             string fakeId = "User_" + UnityEngine.Random.Range(1000, 9999);
             LocalSession = new PlayerSession(fakeId, "Player_01");
 
-            Debug.Log("서버 연결 성공! 부여받은 ID: {LocalSession.PlayerId}");
+            Debug.Log($"서버 연결 성공! 부여받은 ID: {LocalSession.PlayerId}");
             OnConnectionSuccess?.Invoke();
         }
     }

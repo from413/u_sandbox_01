@@ -151,7 +151,7 @@ MonoBehaviour:
   serverTickInterval: 0.033
   _serverMoveSpeed: 5
   _enableDetailedLogging: 1
-  simulateBot: 0
+  simulateBot: 1
 --- !u!4 &5069182
 Transform:
   m_ObjectHideFlags: 0
@@ -928,7 +928,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 837b1fdc50dfa7944b7b03cb87eb4c7b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerPrefab: {fileID: 2242287484535717782, guid: 4df91b9b59f07d445b68bb5326d711cd, type: 3}
+  playerPrefab: {fileID: 5529574319891443841, guid: 4df91b9b59f07d445b68bb5326d711cd, type: 3}
 --- !u!4 &493286535
 Transform:
   m_ObjectHideFlags: 0
@@ -1917,7 +1917,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bbbe2d24c8bc787479b916d27fd99771, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  remotePlayerPrefab: {fileID: 2788922027757868844, guid: 24b2b13d767bba6468763f4e480d9097, type: 3}
+  remotePlayerPrefab: {fileID: 6648971014760150785, guid: 24b2b13d767bba6468763f4e480d9097, type: 3}
   baseInterpolationSpeed: 5
   enableDynamicInterpolation: 1
   disconnectTimeout: 8

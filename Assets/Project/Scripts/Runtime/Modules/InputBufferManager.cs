@@ -83,6 +83,8 @@ namespace MyGame.Runtime.Modules
 
         private void CollectInput()
         {
+            if (_NetworkMgr == null || _NetworkMgr.LocalSession == null) return;
+
             _currentTick++;
 
             float h = Input.GetAxisRaw("Horizontal");
@@ -136,6 +138,7 @@ namespace MyGame.Runtime.Modules
 
         private void SendBufferedPackets()
         {
+            if (_NetworkMgr == null || _NetworkMgr.LocalSession == null) return;
             if (_inputBuffer.Count == 0) return;
 
             // 현재 버퍼에 쌓인 모든 패킷을 리스트로 묶음 (Batching)

@@ -144,6 +144,7 @@ namespace MyGame.Server
             // 새로운 플레이어 초기화
             if (!_playerPositions.ContainsKey(packet.PlayerId))
             {
+                Debug.Log($"[Server] 새로운 플레이어 감지: {packet.PlayerId} - 초기 위치 설정");
                 _playerPositions[packet.PlayerId] = Vector3.zero;
                 _playerRotations[packet.PlayerId] = Quaternion.identity; // 회전도 초기화
                 _lastProcessedTicks[packet.PlayerId] = 0;
@@ -223,6 +224,12 @@ namespace MyGame.Server
         /// </summary>
         private void BroadcastState(string playerId, uint tick)
         {
+            // 서버가 해당 플레이어에 대해 마지막으로 처리한 입력 틱 번호를 사용.
+            // 클라이언트 보정(reconciliation)이 올바르게 동작하려면 이 값이 클라이언트의 입력 틱과 일치해야 합니다.
+            uint lastProcessedTick = _lastProcessedTicks.ContainsKey(playerId)
+                ? _lastProcessedTicks[playerId]
+                : tick;
+
             // 플레이어의 회전 가져오기 (없으면 항등원소)
             Quaternion playerRotation = _playerRotations.ContainsKey(playerId) 
                 ? _playerRotations[playerId] 
@@ -230,7 +237,7 @@ namespace MyGame.Server
 
             ServerStatePacket state = new ServerStatePacket(
                 playerId, 
-                tick, 
+                lastProcessedTick, 
                 _playerPositions[playerId],
                 playerRotation  // 회전도 포함
             );

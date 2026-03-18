@@ -140,6 +140,9 @@ namespace MyGame.Runtime.Modules
 
         private void HandleServerState(ServerStatePacket state)
         {
+            // 1단계: 패킷 수신 로그 (이게 안 찍히면 NetworkManager 문제)
+            Debug.Log($"[RemoteActorManager] 패킷 수신됨. / PlayerId: {state.PlayerId} / Tick: {state.LastProcessedTick}");
+
             // 자신의 상태는 무시 (로컬에서 처리됨)
             if (string.IsNullOrEmpty(state.PlayerId) || state.PlayerId == _localPlayerId)
                 return;

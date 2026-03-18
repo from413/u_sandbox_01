@@ -29,6 +29,7 @@ namespace MyGame.Runtime.Modules
         [SerializeField] private float _correctionSmoothTime = 0.2f; // 보정을 얼마나 부드럽게 할지 (초)
         private Vector3 _correctionVelocity = Vector3.zero;
         private Vector3 _targetPosition = Vector3.zero;
+        private float _lastSentTime = 0f;
 
         // 성능 모니터링 (선택사항)
         private float _maxCorrectionError = 0f;
@@ -91,8 +92,11 @@ namespace MyGame.Runtime.Modules
             // 로컬 세션 ID 가져오기
             string playerId = _NetworkMgr.LocalSession.PlayerId;
 
-            // 패킷 생성
-            InputPacket packet = new InputPacket(playerId, _currentTick, h, v, jump);
+            // 현재 로컬 플레이어의 회전 수집
+            Quaternion currentRotation = _localActor != null ? _localActor.CurrentRotation : Quaternion.identity;
+
+            // 패킷 생성 (회전 포함)
+            InputPacket packet = new InputPacket(playerId, _currentTick, h, v, jump, currentRotation);
 
             // 1. 서버 전송용 버퍼에 저장
             _inputBuffer.Enqueue(packet);
@@ -112,7 +116,7 @@ namespace MyGame.Runtime.Modules
 
             if (h != 0 || v != 0 || jump)
             {
-                Debug.Log($"[Input] Tick:{_currentTick} - H:{h:F1}, V:{v:F1}, Jump:{jump}");
+                Debug.Log($"[Input] Tick:{_currentTick} - H:{h:F1}, V:{v:F1}, Jump:{jump}, Rotation:{currentRotation.eulerAngles.y:F1}°");
             }
         }
 
@@ -141,6 +145,9 @@ namespace MyGame.Runtime.Modules
                 packetsToSend.Add(_inputBuffer.Dequeue());
             }
 
+            // 최근 전송 시간을 기록하여 대략적인 입력 지연을 추정
+            _lastSentTime = Time.time;
+
             // JSON 변환 (네트워크 레이어가 InputPacket 타입을 알 필요가 없도록 추상화)
             InputPacketBatch batch = new InputPacketBatch { Packets = packetsToSend };
             string json = JsonUtility.ToJson(batch);
@@ -166,8 +173,9 @@ namespace MyGame.Runtime.Modules
             if (state.LastProcessedTick <= _lastReconciledTick) return;
             _lastReconciledTick = state.LastProcessedTick;
 
-            // 서버가 계산한 공인 위치
+            // 서버가 계산한 공인 위치 및 회전
             Vector3 serverAuthPosition = state.Position;
+            Quaternion serverAuthRotation = state.Rotation;
             Vector3 predictedPosition = _localActor.transform.position;
 
             // 보정 전 오류 측정
@@ -175,6 +183,7 @@ namespace MyGame.Runtime.Modules
 
             // 로컬 예측 위치를 서버 위치로 되돌린 뒤, 서버가 처리한 틱 이후 입력들을 재적용(재생)
             _localActor.SetPosition(serverAuthPosition);
+            _localActor.SetRotation(serverAuthRotation);  // 회전도 서버 권위로 설정
 
             int replayCount = 0;
             int replayStartIndex = _inputHistory.FindIndex(entry => entry.Tick > state.LastProcessedTick);
@@ -207,18 +216,25 @@ namespace MyGame.Runtime.Modules
 
             // 보정 후 오류 측정
             float positionErrorAfter = Vector3.Distance(_localActor.transform.position, serverAuthPosition);
-            
+
+            // 입력 지연 추정 (보내고 받은 시점 간격)
+            float inputLatency = Time.time - _lastSentTime;
+            NetworkDiagnostics.Instance?.RecordInputLatency(inputLatency);
+
             // 성능 통계 업데이트
             _totalCorrectionError += positionErrorBefore;
             _correctionCount++;
             if (positionErrorBefore > _maxCorrectionError)
                 _maxCorrectionError = positionErrorBefore;
 
+            // 진단 모듈에도 기록
+            NetworkDiagnostics.Instance?.RecordCorrectionError(positionErrorBefore);
+
             // 상세 로깅
             float errorPercentage = positionErrorBefore > 0.01f ? (positionErrorAfter / positionErrorBefore * 100f) : 0f;
             string replayInfo = replayCount > 0 ? $" / Replayed:{replayCount} inputs" : "";
             
-            Debug.Log($"[Correction] Tick:{state.LastProcessedTick} / Error:{positionErrorBefore:F3}m→{positionErrorAfter:F3}m ({errorPercentage:F1}%){replayInfo}");
+            Debug.Log($"[Correction] Tick:{state.LastProcessedTick} / Pos Error:{positionErrorBefore:F3}m→{positionErrorAfter:F3}m ({errorPercentage:F1}%) / Rotation:{serverAuthRotation.eulerAngles.y:F1}°{replayInfo}");
             
             // 큰 오류가 발생한 경우 경고
             if (positionErrorBefore > 0.5f)

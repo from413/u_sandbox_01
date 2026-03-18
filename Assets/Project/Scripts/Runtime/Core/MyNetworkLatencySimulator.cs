@@ -17,12 +17,12 @@ namespace MyGame.Runtime.Core
         [Header("Latency Settings")]
         [SerializeField] private float baseLatency = 0.05f; // 기본 지연 (초) - 기본 50ms
         [SerializeField] private float latencyVariance = 0.01f; // 지연 변동폭 (기본 ±10ms)
-        
+
         [Header("Debug Settings")]
         [SerializeField] private bool _enableLatencyLogging = false;
 
         private Queue<DelayedPacket> _delayedPackets = new Queue<DelayedPacket>();
-        
+
         // 성능 통계
         private float _totalLatency = 0f;
         private int _processedPackets = 0;
@@ -78,15 +78,18 @@ namespace MyGame.Runtime.Core
             while (_delayedPackets.Count > 0 && _delayedPackets.Peek().arrivalTime <= Time.time)
             {
                 var packet = _delayedPackets.Dequeue();
-                
+
                 // 실제 지연값 측정
                 float actualLatency = Time.time - packet.sentTime;
-                
+
                 // 통계 업데이트
                 _totalLatency += actualLatency;
                 _processedPackets++;
                 _maxLatency = Mathf.Max(_maxLatency, actualLatency);
                 _minLatency = Mathf.Min(_minLatency, actualLatency);
+
+                // 네트워크 진단 기록
+                NetworkDiagnostics.Instance?.RecordRTT(actualLatency);
 
                 if (_enableLatencyLogging)
                 {

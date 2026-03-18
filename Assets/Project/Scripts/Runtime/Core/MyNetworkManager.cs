@@ -39,6 +39,9 @@ namespace MyGame.Runtime.Core
         {
             Debug.Log($"[Network] Raw packet sent: {json}");
 
+            // 네트워크 진단에 송신 카운트 기록
+            NetworkDiagnostics.Instance?.RecordPacketSent();
+
             // 지연 시뮬레이터가 있으면 지연을 적용하고, 없으면 즉시 전송
             if (_latencySimulator != null)
             {

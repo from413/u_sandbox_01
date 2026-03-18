@@ -10,6 +10,7 @@ namespace MyGame.Runtime.Modules
         public float Horizontal; // 좌우 입력 (-1 ~ 1)
         public float Vertical; // 상하 입력 (-1 ~ 1)
         public bool IsJump; // 점프 여부 (추가 확장 대비)
+        public UnityEngine.Quaternion AimRotation; // 플레이어가 바라보는 방향 (회전 동기화용)
 
         public InputPacket(string id, uint tick, float h, float v, bool jump)
         {
@@ -18,6 +19,17 @@ namespace MyGame.Runtime.Modules
             Horizontal = h;
             Vertical = v;
             IsJump = jump;
+            AimRotation = UnityEngine.Quaternion.identity;
+        }
+
+        public InputPacket(string id, uint tick, float h, float v, bool jump, UnityEngine.Quaternion rotation)
+        {
+            PlayerId = id;
+            Tick = tick;
+            Horizontal = h;
+            Vertical = v;
+            IsJump = jump;
+            AimRotation = rotation;
         }
     }
 }

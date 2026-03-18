@@ -6,12 +6,13 @@ namespace MyGame.Runtime.Modules
     {
         [SerializeField] private float moveSpeed = 5f;
         
-        // 회전 기능 (향후 확장용)
-        [SerializeField] private bool enableRotation = false;
+        // 회전 기능 (네트워크 동기화 위해 기본구를 떨)
+        [SerializeField] private bool enableRotation = true; // ✅ 기본곁 true로 변경
         [SerializeField] private float rotationSpeed = 180f; // 도/초
 
         public float MoveSpeed => moveSpeed;
         public float RotationSpeed => rotationSpeed;
+        public Quaternion CurrentRotation => transform.rotation;
 
         // 캐시된 이동 방향 (최적화용)
         private Vector3 _lastMoveDirection = Vector3.zero;

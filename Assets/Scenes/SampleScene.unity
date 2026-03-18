@@ -150,8 +150,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   serverTickInterval: 0.033
   _serverMoveSpeed: 5
-  _enableDetailedLogging: 0
-  simulateBot: 1
+  _enableDetailedLogging: 1
+  simulateBot: 0
 --- !u!4 &5069182
 Transform:
   m_ObjectHideFlags: 0
@@ -1918,7 +1918,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   remotePlayerPrefab: {fileID: 2788922027757868844, guid: 24b2b13d767bba6468763f4e480d9097, type: 3}
-  interpolationSpeed: 5
+  baseInterpolationSpeed: 5
+  enableDynamicInterpolation: 1
+  disconnectTimeout: 8
 --- !u!4 &2064667052
 Transform:
   m_ObjectHideFlags: 0

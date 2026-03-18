@@ -125,6 +125,14 @@ namespace MyGame.Runtime.Core
         }
 
         /// <summary>
+        /// 최신 RTT 값을 밀리초 단위로 반환합니다 (동적 보간 속도 조정용).
+        /// </summary>
+        public float GetLatestRTT()
+        {
+            return _currentRTT * 1000f; // 초 -> 밀리초 변환
+        }
+
+        /// <summary>
         /// 현재 네트워크 상황을 평가합니다 (디버깅용).
         /// </summary>
         public NetworkCondition EvaluateNetworkCondition()

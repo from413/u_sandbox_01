@@ -2,334 +2,159 @@
 
 ---
 
-## ✅ 현재 구현된 핵심 기능
+## ✅ 최신 변경 사항 (2026-03-18 Phase 1 업데이트)
 
-### 클라이언트 예측 + 서버 보정 (Reconciliation)
-- 로컬 입력은 즉시 적용되어 부드러운 조작감 유지
-- 서버 공인 위치 도착 시 **그 틱 이후 입력 재생**으로 보정
-- SmoothDamp를 통해 보정 이동을 부드럽게 처리
+### 1) 플레이어 방향 회전 동기화 추가 ⭐ **NEW**
+- **InputPacket에 회전 필드 추가**: `AimRotation (Quaternion)` - 플레이어가 바라보는 방향 저장
+- **ActorController 개선**:
+  - `enableRotation` 기본값을 `false` → `true`로 변경
+  - 새로운 프로퍼티 추가: `CurrentRotation` - 현재 회전값 반환
+  - 회전은 이동 방향에 따라 자동 업데이트 (SLERP 사용)
+- **InputBufferManager 통합**:
+  - 입력 수집 시 로컬 플레이어의 현재 회전을 InputPacket에 포함
+  - 서버 상태 수신 시 로컬 플레이어 회전도 동기화 (`SetRotation()` 호출)
+  - 재생(Replay) 시에도 회전 추적
+- **MinimalServer 회전 처리**:
+  - 서버는 입력의 이동 방향에 따라 `Quaternion.LookRotation()` 계산
+  - 현재 움직이지 않으면 클라이언트가 보낸 회전값 사용 (조준 방향)
+  - 봇도 원형 궤도상 이동 방향으로 자동 회전
+- **RemoteActorManager 회전 보간**:
+  - 원격 플레이어의 회전을 `Quaternion.Slerp()`로 부드럽게 보간
+  - 회전 각도 차이가 0.1°보다 작으면 즉시 스냅
 
-### 고정 틱 서버 시뮬레이션
-- MinimalServer: 30Hz 고정 틱 입력 처리
-- 클라이언트 입력 큐 기반 처리 및 브로드캐스트
-- 각 틱마다 모든 플레이어의 공인 상태 생성
-- **입력 검증**: 중복 틱 무시, 플레이어별 마지막 처리 틱 추적
+### 2) 동적 보간 속도 조절 (RTT 기반) ⭐ **NEW**
+- **RemoteActorManager 개선**:
+  - 네트워크 지연(RTT)을 감지하여 보간 속도 자동 조정
+  - `enableDynamicInterpolation` 옵션 추가 (기본값: `true`)
+  - `baseInterpolationSpeed` 로 기본 보간 속도 설정
+  - 새로운 메서드들:
+    - `GetInterpolationSpeed(playerId)` - 플레이어별 동적 속도 반환
+    - `UpdateDynamicInterpolationSpeed(playerId)` - RTT 기반 속도 재계산
+- **동작 원리**:
+  - RTT < 50ms: 기본 속도의 80% (부드러운 보간)
+  - RTT 50-100ms: 기본 속도 유지
+  - RTT > 100ms: 기본 속도 × (1 + (RTT-100)/100) (빠른 따라잡기)
+  - 예: RTT 150ms → 속도 1.5배 (빠르게 다음 업데이트까지 도달)
+- **NetworkDiagnostics 확장**:
+  - 새로운 public 메서드 추가: `GetLatestRTT()` - 최신 RTT값 반환 (밀리초)
+  - RemoteActorManager가 이를 호출하여 동적 속도 계산
 
-### 네트워크 지연 시뮬레이션
-- 기본 지연(baseLatency) + 변동(latencyVariance) 모사
-- 실제 네트워크 환경 테스트 가능
-- RTT 통계 추적 및 모니터링
-
-### 원격 플레이어 관리 + 보간
-- RemoteActorManager: 서버 상태 패킷 수신 시 원격 플레이어 생성/갱신
-- **선형 보간(Linear Interpolation)**: 서버 상태 업데이트 사이의 부드러운 이동
-- 목표 위치 추적으로 자연스러운 동작
-
----
-
-## 🔄 변경 사항 상세 (2026-03-18)
-
-### 1️⃣ RemoteActorManager 개선
-**파일**: [Assets/Project/Scripts/Runtime/Modules/RemoteActorManager.cs](Assets/Project/Scripts/Runtime/Modules/RemoteActorManager.cs)
-
-**항목**:
-- ✅ 선형 보간(Linear Interpolation) 추가
-  - `interpolationSpeed` 파라미터로 부드러움 조절
-  - Update에서 매 프레임 목표 위치로 이동
-- ✅ 목표 위치 추적 (`_targetPositions` Dictionary)
-- ✅ 마지막 위치 저장 (`_lastPositions`)
-- ✅ 틱 기반 업데이트 감지
-
-**설정값**:
-```
-Remote Player Prefab: 원격 플레이어 프리팹
-Interpolation Speed: 5.0 (조절 가능)
-```
-
----
-
-### 2️⃣ InputBufferManager 향상
-**파일**: [Assets/Project/Scripts/Runtime/Modules/InputBufferManager.cs](Assets/Project/Scripts/Runtime/Modules/InputBufferManager.cs)
-
-**항목**:
-- ✅ 향상된 보정 로깅
-  - 보정 전후 오류 비교 (`Error:A→B`)
-  - 오류 감소율 계산 (%)
-  - 재생된 입력 개수 표시
-- ✅ 성능 통계 수집
-  - 총 보정 횟수
-  - 최대 오류값
-  - 평균 오류값
-- ✅ `PrintStatistics()` 메서드 추가
-
-**로그 예시**:
-```
-[Input] Tick:123 - H:1.0, V:0.0, Jump:false
-[Network] 서버로 1개 패킷 전송 (최신 Tick:123 / 히스토리:5)
-[Correction] Tick:123 / Error:0.523m→0.045m (91.4%) / Replayed:2 inputs
-⚠️ 큰 보정 오류 감지: 1.234m (서버 응답 지연 또는 네트워크 문제 가능)
-```
+### 3) 기존 기능 유지 및 강화
+- RemoteActorManager의 연결 끊김 처리 여전히 활성화 (8초 타임아웃)
+- NetworkDiagnostics로 모든 지표 추적
+- 로컬 플레이어 입력 보정(Reconciliation) 안정적으로 작동
+- 입력 배칭 및 고정 틱 시뮬레이션 유지
 
 ---
 
-### 3️⃣ ActorController 확장
-**파일**: [Assets/Project/Scripts/Runtime/Modules/ActorController.cs](Assets/Project/Scripts/Runtime/Modules/ActorController.cs)
+## 🧩 Unity에서 필요한 작업
 
-**항목**:
-- ✅ 회전 처리 지원 (`enableRotation` 플래그)
-- ✅ 회전 속도 설정 (`rotationSpeed`)
-- ✅ `SetRotation()` 메서드 추가
-- ✅ `Reset()` 메서드 추가
-- ✅ 명시적 deltaTime 전달로 재생 일관성 보장
-- ✅ 속도 벡터 캐싱 최적화
+### ✅ 필수 작업
 
-**사용 예**:
-```csharp
-actorController.SetPosition(new Vector3(5, 0, 3));
-actorController.SetRotation(Quaternion.identity);
-actorController.ApplyInput(packet, fixedDeltaTime);
+#### 1) ActorController 설정 (부분 변경)
+- **변경 사항**: `enableRotation` 필드가 이제 기본값으로 `true`로 설정되어 있습니다
+- **확인 사항**: 기존에 수동으로 씬에서 비활성화했다면, 다시 활성화하거나 프리팹을 업데이트하세요
+- **검증**: 게임 플레이 중 플레이어가 이동 방향에 따라 자동으로 회전하는지 확인
+
+#### 2) RemoteActorManager 설정 (일부 속성명 변경)
+- **기존 속성 이름 변화**:
+  - `interpolationSpeed` → `baseInterpolationSpeed` (기본값 유지: 5.0)
+  - **씬 할당**: 진행 중이었다면 새로 재할당 필요 (또는 속성 이름만 변경)
+- **새로운 옵션 추가**:
+  - `enableDynamicInterpolation` (기본값: `true`) - 동적 보간 활성화 여부 (권장: 활성화)
+  - `disconnectTimeout` 값 유지 (기본값: 8.0초)
+- **원격 플레이어 프리팹 할당**: 여전히 `Remote Player Prefab` 에 프리팹 지정 필요
+
+#### 3) NetworkDiagnostics 활성화 (선택 사항)
+- `enableDiagnostics` 설정 확인 (기본값: `true`)
+- `showDiagnosticsUI` 체크하여 진단 UI 표시 여부 결정
+- 동적 보간 속도 조절이 정상 작동하려면 **반드시 활성화** 필요
+
+#### 4) MinimalServer 설정 (자동 처리됨)
+- 서버가 회전 계산을 자동으로 처리하므로 추가 설정 불필요
+- `simulateBot` 활성화하면 봇도 자동으로 방향을 회전시킵니다
+- `enableDetailedLogging` 활성화하면 회전 정보도 로그에 포함됩니다
+
+### ⚙️ 선택 작업
+
+#### 1) 씬 재구성 (권장)
+새 씬에서 테스트하려면:
+- 게임 매니저 (GameManager.cs)
+- 로컬 플레이어 (ActorController와 InputBufferManager)
+- 원격 플레이어 매니저 (RemoteActorManager - Remote Player Prefab 할당)
+- 최소 서버 (MinimalServer with simulateBot enabled)
+- 네트워크 매니저 (MyNetworkManager)
+- 네트워크 지연 시뮬레이터 (MyNetworkLatencySimulator)
+- 진단 시스템 (NetworkDiagnostics)
+
+#### 2) 프리팹 업데이트
+로컬 플레이어 프리팹:
+```
+✓ ActorController 컴포넌트 확인
+  - moveSpeed: 5 (권장)
+  - enableRotation: true (⭐ 중요)
+  - rotationSpeed: 180 (도/초)
 ```
 
----
-
-### 4️⃣ MinimalServer 강화
-**파일**: [Assets/Project/Scripts/Runtime/Server/MinimalServer.cs](Assets/Project/Scripts/Runtime/Server/MinimalServer.cs)
-
-**항목**:
-- ✅ 입력 검증 (중복 틱 무시)
-- ✅ 플레이어별 마지막 처리 틱 추적
-- ✅ 향상된 로깅 (`_enableDetailedLogging`)
-- ✅ 성능 통계 수집
-- ✅ `PrintServerStatus()` 메서드 추가
-- ✅ 봇 각도 계산 개선 (각도 단위 정규화)
-
-**로그 예시**:
+원격 플레이어 프리팹:
 ```
-[Server] 클라이언트로부터 3개 입력 수신 (큐 크기: 5)
-[Server] Tick:30 / 플레이어:2 / 이번 틱 처리:3 inputs
-중복 입력 무시: User_1234 Tick:123
+✓ ActorController 컴포넌트 기본값
+  - moveSpeed: 5
+  - enableRotation: true (필수, 회전 보간을 위해)
+  - rotationSpeed: 180
 ```
 
----
-
-### 5️⃣ MyNetworkLatencySimulator 개선
-**파일**: [Assets/Project/Scripts/Runtime/Core/MyNetworkLatencySimulator.cs](Assets/Project/Scripts/Runtime/Core/MyNetworkLatencySimulator.cs)
-
-**항목**:
-- ✅ 성능 통계 추적
-  - 평균 지연 (`CurrentAverageLatency`)
-  - 최대/최소 지연
-  - 처리된 패킷 개수
-- ✅ 로깅 옵션 (`_enableLatencyLogging`)
-- ✅ `PrintLatencyStatistics()` 메서드
-- ✅ `SetLatency()` for 실시간 조정
-- ✅ Getter 메서드들 추가
-
-**기본값**:
+#### 3) 진단 UI 활용 (권장)
+게임플레이 중 또는 빌드 후:
 ```
-Base Latency: 50ms (0.05s)
-Latency Variance: ±10ms (0.01s)
+OnGUI에 진단 정보 표시:
+- RTT: 현재/평균/범위
+- 패킷: 송신/수신 개수
+- 보정 오류: 평균/최대
+- 입력 지연: 최신값
+- 네트워크 상태: Excellent/Good/Fair/Poor/VeryPoor
+
+버튼:
+[통계 출력] - 콘솔에 상세 진단 보고서 출력
+[UI 토글]   - 진단 UI 표시/숨기기
 ```
 
 ---
 
-### 6️⃣ 신규 파일: RemoteActorSyncHelper
-**파일**: [Assets/Project/Scripts/Runtime/Modules/RemoteActorSyncHelper.cs](Assets/Project/Scripts/Runtime/Modules/RemoteActorSyncHelper.cs)
+## ✅ 검증 포인트 (새로운 항목 추가)
 
-**용도**: 원격 플레이어의 고급 동기화 지원 (선택적)
+### 회전 관련
+1. **로컬 플레이어 회전**: WASD 입력 시 플레이어가 이동 방향으로 회전하는가?
+2. **원격 플레이어 회전**: 봇 또는 다른 클라이언트가 부드럽게 회전하는가?
+3. **회전 동기화**: 회전 로그에 도/초 값이 표시되는가?
+   ```
+   [Input] Tick:X - H:0.0, V:1.0, Jump:false, Rotation:0.0°
+   [RemoteActor] Bot_01 업데이트 - Tick:X / 거리:X.XXX / 회전:45.0°
+   ```
 
-**기능**:
-- 선형 보간 (Lerp)
-- 외삽 (Extrapolation): 마지막 속도로 이동 계속
-- 즉시 이동 (Snap)
-- 라그 보정 (Lag Compensation)
+### 동적 보간 (RTT 기반)
+1. **높은 지연 상황**: RTT > 100ms일 때 보간 속도가 증가하는가?
+   ```
+   [RemoteActor] Bot_01 보간 속도 조정: 5.00 → 7.50 (RTT:150.0ms)
+   ```
+2. **낮은 지연 상황**: RTT < 50ms일 때 속도가 감소하는가?
+3. **일반 상황**: RTT 50-100ms 범위에서 기본 속도 유지하는가?
 
-**사용 예**:
-```csharp
-RemoteActorSyncHelper syncHelper = new RemoteActorSyncHelper(5.0f, SyncMode.Extrapolate);
-Vector3 newPos = syncHelper.CalculatePosition(currentPos, targetPos, Time.deltaTime);
-syncHelper.UpdateRTTEstimate(networkRTT);
-Vector3 compensatedPos = syncHelper.CalculateLagCompensatedPosition(currentPos);
-```
-
----
-
-### 7️⃣ 신규 파일: NetworkDiagnostics
-**파일**: [Assets/Project/Scripts/Runtime/Core/NetworkDiagnostics.cs](Assets/Project/Scripts/Runtime/Core/NetworkDiagnostics.cs)
-
-**용도**: 네트워크 성능 모니터링 및 진단 (선택적)
-
-**기능**:
-- RTT 통계 수집
-- 입력 지연 추적
-- 보정 오류 모니터링
-- 패킷 송수신 카운팅
-- 네트워크 상태 평가 (Excellent/Good/Fair/Poor/VeryPoor)
-- 진단 UI (F키 또는 버튼)
-
-**사용 예**:
-```csharp
-NetworkDiagnostics.Instance.RecordRTT(0.05f);
-NetworkDiagnostics.Instance.RecordCorrectionError(0.1f);
-var condition = NetworkDiagnostics.Instance.EvaluateNetworkCondition();
-NetworkDiagnostics.Instance.PrintDiagnostics();
-```
-
----
-
-## 🧩 Unity 씬 설정 체크리스트
-
-### GameObject 구조 (권장)
-```
-Canvas (UI)
-  └─ Diagnostics Panel (선택사항)
-
-NetworkManager
-  ├─ MyNetworkManager
-  ├─ MyNetworkLatencySimulator
-  └─ NetworkDiagnostics (선택사항)
-
-GameController  
-  ├─ GameManager
-  ├─ InputBufferManager
-  └─ CameraControl
-
-Server
-  └─ MinimalServer
-
-Players
-  ├─ ActorSpawner
-  └─ RemoteActorManager
-```
-
-### Inspector 설정값
-
-**InputBufferManager:**
-```
-Send Interval: 0.033 (30Hz)
-Move Speed: 5.0
-Correction Smooth Time: 0.2
-```
-
-**RemoteActorManager:** ⭐ **신규 설정**
-```
-Remote Player Prefab: [AssignPrefab] ActorController 포함
-Interpolation Speed: 5.0  ← 조절로 보간 속도 제어
-```
-
-**MinimalServer:**
-```
-Server Tick Interval: 0.033 (30Hz)
-Server Move Speed: 5.0
-Simulate Bot: true
-Enable Detailed Logging: false (성능용)
-```
-
-**MyNetworkLatencySimulator:**
-```
-Base Latency: 0.05 (50ms, 시뮬레이션용)
-Latency Variance: 0.01 (±10ms)
-```
-
-**ActorController:** ⭐ **신규 설정**
-```
-Move Speed: 5.0
-Enable Rotation: false (향후 확장용)
-Rotation Speed: 180 (도/초)
-```
-
-**NetworkDiagnostics (선택사항):**
-```
-Enable Diagnostics: true
-Show Diagnostics UI: false (필요시 활성화)
-```
-
-**MyNetworkLatencySimulator:**
-```
-Base Latency: 0.05 (50ms)
-Latency Variance: 0.01 (±10ms)
-Enable Latency Logging: false
-```
-
-### Input Manager 확인
-- Horizontal: ← → / A / D
-- Vertical: ↑ ↓ / W / S
-- Space: Jump
-
----
-
-## 📊 실행 결과 로깅 및 콘솔 출력
-
-### 정상 동작 로그 시퀀스
-```
-[Network Simulator] 지연 설정: 50.0ms ± 10.0ms
-[Server] 서버 시작 (30Hz 고정 틱)
-서버 연결 성공! 부여받은 ID: User_5678
-
-— 플레이어 조작 —
-[Input] Tick:15 - H:1.0, V:0.0, Jump:false
-[Network] 서버로 1개 패킷 전송 (최신 Tick:15 / 히스토리:3)
-[Server] 클라이언트로부터 1개 입력 수신 (큐 크기: 1)
-
-— 서버 처리 —
-[Server] Tick:30 / 플레이어:2 / 이번 틱 처리:1 inputs
-
-— 클라이언트 수신 및 보정 —
-[Correction] Tick:30 / Error:0.156m→0.023m (85.3%) / Replayed:1 inputs
-
-— 원격 플레이어 —
-[RemoteActor] 플레이어 생성: Bot_01 @ (3.0, 0.0, 0.0)
-[RemoteActor] Bot_01 위치 업데이트 - Tick:30 / 거리:0.165 → (2.8, 0.0, -0.8)
-```
-
-### 진단 명령어 호출
-**InputBufferManager 통계**:
-```csharp
-InputBufferManager.Instance.PrintStatistics();
-// 출력:
-// [Stats] 보정 횟수:45 / 평균 오류:0.087m / 최대 오류:0.523m
-```
-
-**MinimalServer 상태**:
-```csharp
-MinimalServer.Instance.PrintServerStatus();
-// 출력:
-// === 서버 상태 (Tick:2100) ===
-// 활성 플레이어: 2
-//   - User_1234: (5.3, 0.0, 2.1) (LastTick:120)
-//   - Bot_01: (1.5, 0.0, -2.8) (LastTick:2100)
-// 큐 크기: 0
-// 누적 처리 입력: 540
-```
-
-**네트워크 진단**:
-```csharp
-NetworkDiagnostics.Instance.PrintDiagnostics();
-// 출력:
-// ===== 네트워크 진단 보고서 =====
-// RTT: 평균 53.24ms / 범위 41.12ms ~ 68.45ms
-// 패킷: 송신 120 / 수신 115
-// 보정: 평균 오류 0.089m / 최대 0.523m
-// 네트워크 상태: Good
-```
-
-### 성능 모니터링 Tip
-| 메트릭 | 정상 범위 | 주의 | 위험 |
-|--------|----------|------|------|
-| RTT (지연) | < 50ms | 50-100ms | > 100ms |
-| 보정 오류 | < 0.1m | 0.1-0.5m | > 0.5m |
-| Replayed inputs | 1-3개 | 4-5개 | > 5개 |
-| 큐 크기 | 0-1개 | 2-3개 | > 3개 |
+### 기존 기능 (유지 확인)
+1. **원격 플레이어 자동 제거**: 8초 동안 업데이트 없으면 제거되는가?
+2. **Diagnostics UI**: 진단 정보가 올바르게 표시되는가?
+3. **로컬 플레이어 보정**: 위치 오류가 보정되는가?
 
 ---
 
 ## 🚀 다음 구현 단계 (우선순위)
 
 ### Phase 1: 원격 플레이어 개선 (진행 중 ✓)
-- ✅ 선형 보간 추가
-- ✅ RemoteActorSyncHelper (선택): 외삽, 라그 보정
-- ⏳ **동적 보간 속도 조절**: 네트워크 지연에 따른 자동 조定
-- ⏳ **애니메이션 동기화**: 방향 회전 애니메이션
+- ✅ 선형 보간 추가 (완료)
+- ✅ RemoteActorSyncHelper (선택) - 외삽, 라그 보정 (완료)
+- ✅ **동적 보간 속도 조절** (방금 구현 ⭐)
+- ✅ **애니메이션 동기화**: 방향 회전 애니메이션 (방금 구현 ⭐)
+- ⏳ 애니메이션 상태 동기화 (점프, 공격 등 - 향후)
 
 ### Phase 2: 네트워크 강화
 - ⏳ ACK/재전송 메커니즘 (패킷 손실 대응)
@@ -354,90 +179,176 @@ NetworkDiagnostics.Instance.PrintDiagnostics();
 
 ---
 
-## 📝 코드 구조 및 네임스페이스
+## 📊 제어 흐름 다이어그램 (갱신됨)
 
 ```
-Assets/Project/Scripts/Runtime/
-│
-├── Core/
-│   ├── GameManager.cs              → 게임 상태 관리
-│   ├── MyNetworkManager.cs          → 네트워크 이벤트 허브
-│   ├── ServerStatePacket.cs        → 서버→클라이언트 패킷
-│   ├── PlayerSession.cs             → 플레이어 세션 정보
-│   ├── GameState.cs                 → 게임 상태 (Intro/InGame)
-│   ├── MyNetworkLatencySimulator.cs → 지연 시뮬레이터 ⭐
-│   └── NetworkDiagnostics.cs       → 진단 도구 (신규) ⭐
-│
-├── Modules/
-│   ├── InputBufferManager.cs    → 클라이언트 입력 + 보정 ⭐ 개선됨
-│   ├── RemoteActorManager.cs    → 원격 플레이어 + 보간 ⭐ 개선됨
-│   ├── ActorController.cs       → 플레이어 이동 + 회전 ⭐ 확장됨
-│   ├── RemoteActorSyncHelper.cs → 동기화 헬퍼 (신규) ⭐
-│   ├── ActorSpawner.cs          → 로컬 플레이어 생성
-│   ├── CameraControl.cs         → 카메라 제어
-│   ├── InputPacket.cs           → 클라이언트→서버 패킷
-│   ├── InputPacketBatch.cs      → 배치 전송
-│   └── InputHistoryEntry.cs    → 입력 히스토리
-│
-└── Server/
-    └── MinimalServer.cs         → 틱 기반 서버 시뮬레이션 ⭐ 개선됨
+┌─────────────────────────────────────────────────────────────────┐
+│ CLIENT SIDE (Updated with Rotation)                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ Update()                                                         │
+│  ├→ CollectInput()                                              │
+│  │   ├→ Read keyboard input (WASD)                              │
+│  │   ├→ Create InputPacket (Tick++)                             │
+│  │   ├→ Capture CurrentRotation from LocalActor ⭐              │
+│  │   ├→ Enqueue to _inputBuffer                                 │
+│  │   └→ ApplyInput() to _localActor IMMEDIATELY                 │
+│  │       ├→ Movement applied (Translate)                        │
+│  │       ├→ Rotation applied (LookRotation → RotateTowards)    │
+│  │       └→ Store in _inputHistory for replay                  │
+│  │                                                              │
+│  └→ Apply Correction Smoothing                                  │
+│     └→ SmoothDamp towards _targetPosition                       │
+│                                                                  │
+│ NetworkSendLoop() [Every 0.033s]                                │
+│  ├→ Dequeue all packets from _inputBuffer                       │
+│  ├→ Convert to JSON batch (include AimRotation) ⭐              │
+│  └→ SendRawPacket(json)                                         │
+│      └→ Latency Simulator adds random delay                     │
+│         └→ Server receives after ~50ms                          │
+│                                                                  │
+│ OnServerStateReceived event                                      │
+│  ├─→ Local player:                                              │
+│  │    ├→ HandleServerState (InputBufferManager)                │
+│  │    ├→ Measure position error                                 │
+│  │    ├→ Correct to server position + rotation ⭐              │
+│  │    ├→ Apply server rotation ⭐                               │
+│  │    └→ REPLAY unprocessed inputs (with rotation tracking) ⭐  │
+│  │                                                              │
+│  └─→ Remote players:                                            │
+│       ├→ HandleServerState (RemoteActorManager)                │
+│       ├→ Create GameObject if first time (with rotation) ⭐    │
+│       ├→ Calculate dynamic interpolation speed (RTT-based) ⭐  │
+│       ├→ Update position target for Lerp interpolation          │
+│       └→ Update rotation target for Slerp interpolation ⭐     │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ SERVER SIDE (Updated with Rotation)                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ ServerTickLoop() [Every 0.033s]                                 │
+│  ├→ _serverTick++                                               │
+│  ├→ ProcessTick()                                               │
+│  │  ├→ Dequeue all InputPackets from _incomingPackets          │
+│  │  ├→ For each packet:                                         │
+│  │  │   ├→ Verify Tick > _lastProcessedTicks (anti-duplicate) │
+│  │  │   ├→ Calculate moveDir from Horizontal/Vertical input    │
+│  │  │   ├→ Update _playerPositions[PlayerId]                  │
+│  │  │   ├→ Calculate rotation from moveDir ⭐                  │
+│  │  │   │   └→ If movement: Quaternion.LookRotation(moveDir)  │
+│  │  │   │   └→ If no movement: Use packet.AimRotation ⭐      │
+│  │  │   └→ Update _playerRotations[PlayerId] ⭐               │
+│  │  │                                                          │
+│  │  ├→ UpdateBot() [if simulateBot enabled]                   │
+│  │  │   ├→ Move around circle for testing                      │
+│  │  │   ├→ Calculate bot rotation from direction ⭐            │
+│  │  │   └→ Update _playerRotations[_botId] ⭐                 │
+│  │  │                                                          │
+│  │  └→ BroadcastState() → all clients                          │
+│  │      └→ Send ServerStatePacket with:                        │
+│  │          ├→ Authoritative position                          │
+│  │          └→ Authoritative rotation ⭐                       │
+│  │                                                             │
+│  └→ Log status every 30 ticks (~1 second)                      │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ REMOTE PLAYER UPDATE (New Dynamic Interpolation)                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│ RemoteActorManager.Update() → Each frame                        │
+│  For each remote player:                                        │
+│    1. Get current interpolation speed (RTT-based) ⭐            │
+│       if RTT < 50ms: speed × 0.8 (smooth)                      │
+│       else if 50ms ≤ RTT ≤ 100ms: base speed                  │
+│       else (RTT > 100ms): speed × (1 + (RTT-100)/100) (fast)  │
+│                                                                  │
+│    2. Position interpolation (Lerp)                             │
+│       newPos = Lerp(currentPos, targetPos,                      │
+│                     Time.deltaTime × interpolationSpeed)        │
+│                                                                  │
+│    3. Rotation interpolation (Slerp) ⭐                        │
+│       newRot = Slerp(currentRot, targetRot,                    │
+│                      Time.deltaTime × interpolationSpeed)       │
+│                                                                  │
+│    4. Check timeout & remove if needed (8 sec)                 │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔗 주요 메서드 및 API
+## 🔧 코드 변경 요약
 
-### InputBufferManager
+### InputPacket.cs
 ```csharp
-public void RegisterLocalActor(ActorController actor)
-public void PrintStatistics()
+// Before:
+struct InputPacket { 
+  string PlayerId, uint Tick, float H/V, bool IsJump 
+}
+
+// After: ✅ AimRotation 추가
+struct InputPacket { 
+  string PlayerId, uint Tick, float H/V, bool IsJump, 
+  Quaternion AimRotation  // ⭐ 신규
+}
 ```
 
-### RemoteActorManager
+### ServerStatePacket.cs
 ```csharp
-// (자동 처리됨 - OnServerStateReceived 이벤트)
+// Already had Rotation field - now fully utilized ✅
+struct ServerStatePacket { 
+  string PlayerId, uint LastProcessedTick, 
+  Vector3 Position, Quaternion Rotation  // ⭐ 이제 사용됨
+}
 ```
 
-### ActorController
+### ActorController.cs
 ```csharp
-public void ApplyInput(InputPacket packet, float deltaTime)
-public void SetPosition(Vector3 position)
-public void SetRotation(Quaternion rotation)      // 신규
-public void Reset()                               // 신규
+// Changes:
+- enableRotation: false → true  // ⭐ 기본값 변경
+- Added property: CurrentRotation  // ⭐ 회전값 노출
+- ApplyRotation() 메서드 개선
 ```
 
-### MinimalServer
+### InputBufferManager.cs
 ```csharp
-public void ReceiveInputFromClient(List<InputPacket> packets)
-public void PrintServerStatus()                   // 신규
+// Changes:
+- CollectInput(): 현재 회전값 InputPacket에 포함 ⭐
+- HandleServerState(): 서버 회전값 로컬 플레이어에 적용 ⭐
+- 로그에 회전값 표시
 ```
 
-### MyNetworkLatencySimulator
+### MinimalServer.cs
 ```csharp
-public void EnqueueDelayedPacket(Action callback)
-public int GetPendingPacketCount()               // 신규
-public void PrintLatencyStatistics()             // 신규
-public void SetLatency(float baseLatencyMs, float varianceMs)
+// Changes:
+- _playerRotations Dictionary 추가 ⭐
+- ProcessInput(): 입력 방향으로 회전 계산 ⭐
+- UpdateBot(): 봇 회전 조정 ⭐
+- BroadcastState(): 회전값 포함하여 전송 ⭐
 ```
 
-### NetworkDiagnostics
+### RemoteActorManager.cs
 ```csharp
-public void RecordRTT(float rtt)
-public void RecordInputLatency(float latency)
-public void RecordCorrectionError(float error)
-public void RecordPacketSent(int count)
-public NetworkCondition EvaluateNetworkCondition()
-public void PrintDiagnostics()
-public void ToggleDiagnosticsUI()
+// Changes:
+- interpolationSpeed → baseInterpolationSpeed  ✏️ 명칭 변경
+- enableDynamicInterpolation 옵션 추가 ⭐
+- _targetRotations Dictionary 추가 ⭐
+- _dynamicInterpolationSpeeds Dictionary 추가 ⭐
+- Update(): 회전 보간(Slerp) 추가 ⭐, 동적 속도 적용 ⭐
+- GetInterpolationSpeed() 메서드 ⭐
+- UpdateDynamicInterpolationSpeed() 메서드 (RTT 기반) ⭐
+- HandleServerState(): 회전 목표 업데이트 ⭐
 ```
 
-### RemoteActorSyncHelper
+### NetworkDiagnostics.cs
 ```csharp
-public Vector3 CalculatePosition(Vector3 current, Vector3 target, float deltaTime)
-public Vector3 CalculateLagCompensatedPosition(Vector3 currentPosition)
-public void SetSyncMode(SyncMode mode)
-public void SetMoveSpeed(float speed)
-public void UpdateRTTEstimate(float rtt)
+// Changes:
+- GetLatestRTT() 메서드 추가 ⭐
+  (RemoteActorManager의 동적 보간 속도 조정에 사용)
 ```
 
 ---
@@ -449,6 +360,7 @@ public void UpdateRTTEstimate(float rtt)
 - **패킷 손실 미시뮬레이션**: 실제 네트워크의 손실 재현 불가
 - **물리 상호작용 없음**: 단순 위치 이동만 구현
 - **음성/영상**: 음성 채팅, 비디오 스트리밍 미지원
+- **애니메이션 상태**: 점프, 공격 등 상태 애니메이션 미동기화 (향후)
 
 ### 개선 예정
 - [ ] 다중 클라이언트 지원 (실제 네트워크)
@@ -456,3 +368,27 @@ public void UpdateRTTEstimate(float rtt)
 - [ ] 리플레이 시스템
 - [ ] 클라이언트 측 앞보기 (Client-side Prediction 강화)
 - [ ] 서버 렉 보정 (Server-side Lag Compensation)
+- [ ] 애니메이션 상태 동기화 (공격, 점프 등)
+- [ ] 이동/회전 외 추가 상태값 (체력, 상태이상 등)
+
+---
+
+## 📝 커밋 메시지 예시
+
+```
+feat: Phase 1 - 플레이어 방향 회전 동기화 및 동적 보간 속도 조절
+
+- 회전 필드를 InputPacket/ServerStatePacket에 추가
+- ActorController의 회전 자동화 (enableRotation 기본값 true)
+- InputBufferManager에서 플레이어 회전 수집 및 서버 동기화
+- MinimalServer에서 회전값 계산 및 브로드캐스트
+- RemoteActorManager에서 회전 보간(Slerp) 구현
+- RTT 기반 동적 보간 속도 조절 로직 추가
+  * RTT < 50ms: 속도 80% (부드러움)
+  * RTT 50-100ms: 기본 속도
+  * RTT > 100ms: 속도 증가 (빠른 따라잡기)
+- NetworkDiagnostics.GetLatestRTT() 메서드 추가
+
+이러한 개선으로 원격 플레이어의 시각적 매끄러움이 향상되고,
+네트워크 지연에 따라 자동으로 최적화된 보간 속도가 적용됩니다.
+```

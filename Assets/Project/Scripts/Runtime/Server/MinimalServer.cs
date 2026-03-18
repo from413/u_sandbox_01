@@ -26,6 +26,7 @@ namespace MyGame.Server
 
         // 서버가 관리하는 플레이어들의 공인(Authoritative) 위치
         private Dictionary<string, Vector3> _playerPositions = new Dictionary<string, Vector3>();
+        private Dictionary<string, Quaternion> _playerRotations = new Dictionary<string, Quaternion>(); // 새로 추가: 회전 추적
         private Dictionary<string, uint> _lastProcessedTicks = new Dictionary<string, uint>();
 
         // 서버 틱 카운터 (고정 틱당 1씩 증가)
@@ -144,6 +145,7 @@ namespace MyGame.Server
             if (!_playerPositions.ContainsKey(packet.PlayerId))
             {
                 _playerPositions[packet.PlayerId] = Vector3.zero;
+                _playerRotations[packet.PlayerId] = Quaternion.identity; // 회전도 초기화
                 _lastProcessedTicks[packet.PlayerId] = 0;
             }
 
@@ -164,13 +166,21 @@ namespace MyGame.Server
             if (moveDir.sqrMagnitude > 0.01f)
             {
                 _playerPositions[packet.PlayerId] += moveDir * _serverMoveSpeed * serverTickInterval;
+                
+                // 이동 방향에 따라 회전 계산
+                _playerRotations[packet.PlayerId] = Quaternion.LookRotation(moveDir);
+            }
+            else
+            {
+                // 이동이 없으면 클라이언트가 보낸 회전을 사용 (조준 방향)
+                _playerRotations[packet.PlayerId] = packet.AimRotation;
             }
 
             if (_enableDetailedLogging)
             {
                 Debug.Log($"[Server] Tick:{_serverTick} / {packet.PlayerId} / " +
                     $"Input:({packet.Horizontal:F1}, {packet.Vertical:F1}) / " +
-                    $"AuthPos:{_playerPositions[packet.PlayerId]}");
+                    $"AuthPos:{_playerPositions[packet.PlayerId]} / Rot:{_playerRotations[packet.PlayerId].eulerAngles.y:F1}°");
             }
         }
 
@@ -182,6 +192,7 @@ namespace MyGame.Server
             if (!_playerPositions.ContainsKey(_botId))
             {
                 _playerPositions[_botId] = new Vector3(3, 0, 0);
+                _playerRotations[_botId] = Quaternion.identity; // 봇의 회전도 초기화
                 _lastProcessedTicks[_botId] = _serverTick;
             }
 
@@ -191,11 +202,20 @@ namespace MyGame.Server
 
             float radius = 3f;
             Vector3 center = Vector3.zero;
-            _playerPositions[_botId] = center + new Vector3(
+            Vector3 botPos = center + new Vector3(
                 Mathf.Cos(_botAngle * Mathf.Deg2Rad), 
                 0, 
                 Mathf.Sin(_botAngle * Mathf.Deg2Rad)
             ) * radius;
+            
+            _playerPositions[_botId] = botPos;
+            
+            // 봇이 이동하는 방향으로 회전
+            Vector3 botDirection = botPos - center;
+            if (botDirection.sqrMagnitude > 0.01f)
+            {
+                _playerRotations[_botId] = Quaternion.LookRotation(botDirection.normalized);
+            }
         }
 
         /// <summary>
@@ -203,10 +223,16 @@ namespace MyGame.Server
         /// </summary>
         private void BroadcastState(string playerId, uint tick)
         {
+            // 플레이어의 회전 가져오기 (없으면 항등원소)
+            Quaternion playerRotation = _playerRotations.ContainsKey(playerId) 
+                ? _playerRotations[playerId] 
+                : Quaternion.identity;
+
             ServerStatePacket state = new ServerStatePacket(
                 playerId, 
                 tick, 
-                _playerPositions[playerId]
+                _playerPositions[playerId],
+                playerRotation  // 회전도 포함
             );
 
             // 모든 클라이언트에게 이 정보를 보냄

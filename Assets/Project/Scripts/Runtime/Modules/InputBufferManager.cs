@@ -30,6 +30,11 @@ namespace MyGame.Runtime.Modules
         private Vector3 _correctionVelocity = Vector3.zero;
         private Vector3 _targetPosition = Vector3.zero;
 
+        // 성능 모니터링 (선택사항)
+        private float _maxCorrectionError = 0f;
+        private float _totalCorrectionError = 0f;
+        private int _correctionCount = 0;
+
         private void Awake() => Instance = this;
 
         public void RegisterLocalActor(ActorController actor)
@@ -107,7 +112,7 @@ namespace MyGame.Runtime.Modules
 
             if (h != 0 || v != 0 || jump)
             {
-                Debug.Log($"[Tick:{_currentTick}] 입력 감지 - H:{h}, V:{v}, Jump:{jump}");
+                Debug.Log($"[Input] Tick:{_currentTick} - H:{h:F1}, V:{v:F1}, Jump:{jump}");
             }
         }
 
@@ -143,7 +148,7 @@ namespace MyGame.Runtime.Modules
             // 시뮬레이션: 로컬 서버에 전달
             _NetworkMgr?.SendRawPacket(json);
 
-            Debug.Log($"[Network] 서버로 {packetsToSend.Count}개의 패킷 전송 (최신 Tick: {packetsToSend[^1].Tick})");
+            Debug.Log($"[Network] 서버로 {packetsToSend.Count}개 패킷 전송 (최신 Tick:{packetsToSend[^1].Tick} / 히스토리:{_inputHistory.Count})");
         }
 
         // 서버로 보낼 패킷들을 꺼내오는 메서드
@@ -163,11 +168,17 @@ namespace MyGame.Runtime.Modules
 
             // 서버가 계산한 공인 위치
             Vector3 serverAuthPosition = state.Position;
+            Vector3 predictedPosition = _localActor.transform.position;
+
+            // 보정 전 오류 측정
+            float positionErrorBefore = Vector3.Distance(predictedPosition, serverAuthPosition);
 
             // 로컬 예측 위치를 서버 위치로 되돌린 뒤, 서버가 처리한 틱 이후 입력들을 재적용(재생)
             _localActor.SetPosition(serverAuthPosition);
 
+            int replayCount = 0;
             int replayStartIndex = _inputHistory.FindIndex(entry => entry.Tick > state.LastProcessedTick);
+            
             if (replayStartIndex >= 0)
             {
                 for (int i = replayStartIndex; i < _inputHistory.Count; i++)
@@ -176,6 +187,7 @@ namespace MyGame.Runtime.Modules
                     _localActor.ApplyInput(entry.InputPacket, sendInterval);
                     entry.PredictedPosition = _localActor.transform.position;
                     _inputHistory[i] = entry;
+                    replayCount++;
                 }
 
                 // 재생이 끝난 위치를 새로운 보정 목표로 설정
@@ -193,8 +205,39 @@ namespace MyGame.Runtime.Modules
                 _targetPosition = serverAuthPosition;
             }
 
-            float positionError = Vector3.Distance(_localActor.transform.position, serverAuthPosition);
-            Debug.Log($"[Correction] Tick:{state.LastProcessedTick} / Error:{positionError:F3} / Replayed:{_inputHistory.Count} inputs");
+            // 보정 후 오류 측정
+            float positionErrorAfter = Vector3.Distance(_localActor.transform.position, serverAuthPosition);
+            
+            // 성능 통계 업데이트
+            _totalCorrectionError += positionErrorBefore;
+            _correctionCount++;
+            if (positionErrorBefore > _maxCorrectionError)
+                _maxCorrectionError = positionErrorBefore;
+
+            // 상세 로깅
+            float errorPercentage = positionErrorBefore > 0.01f ? (positionErrorAfter / positionErrorBefore * 100f) : 0f;
+            string replayInfo = replayCount > 0 ? $" / Replayed:{replayCount} inputs" : "";
+            
+            Debug.Log($"[Correction] Tick:{state.LastProcessedTick} / Error:{positionErrorBefore:F3}m→{positionErrorAfter:F3}m ({errorPercentage:F1}%){replayInfo}");
+            
+            // 큰 오류가 발생한 경우 경고
+            if (positionErrorBefore > 0.5f)
+            {
+                Debug.LogWarning($"⚠️ 큰 보정 오류 감지: {positionErrorBefore:F3}m (서버 응답 지연 또는 네트워크 문제 가능)");
+            }
+        }
+
+        // 성능 통계 조회 (선택사항)
+        public void PrintStatistics()
+        {
+            if (_correctionCount == 0)
+            {
+                Debug.Log("[Stats] 아직 보정이 발생하지 않았습니다.");
+                return;
+            }
+
+            float avgError = _totalCorrectionError / _correctionCount;
+            Debug.Log($"[Stats] 보정 횟수:{_correctionCount} / 평균 오류:{avgError:F3}m / 최대 오류:{_maxCorrectionError:F3}m");
         }
     }
 }

@@ -12,15 +12,28 @@ namespace MyGame.Server
 
         private MyNetworkManager _NetworkMgr;
 
+        [Header("Server Settings")]
+        [SerializeField] private float serverTickInterval = 0.033f; // 30Hz 시뮬레이션
+        [SerializeField] private float _serverMoveSpeed = 5f;
+
+        private Queue<InputPacket> _incomingPackets = new Queue<InputPacket>();
+
         // 서버가 관리하는 플레이어들의 공인(Authoritative) 위치
         private Dictionary<string, Vector3> _playerPositions = new Dictionary<string, Vector3>();
-        private float _serverMoveSpeed = 5f;
+
+        // 서버 틱 카운터 (고정 틱당 1씩 증가)
+        private uint _serverTick = 0;
+
+        // 로컬 테스트용 가상 플레이어 (봇)
+        [SerializeField] private bool simulateBot = true;
+        private string _botId = "Bot_01";
+        private float _botAngle = 0f;
 
         private void Awake()
         {
             Instance = this;
 
-            // 로컬 네트워크 시뮬레이션: Raw JSON 패킷을 받아서 처리
+            _NetworkMgr = MyNetworkManager.Instance;
             if (_NetworkMgr != null)
             {
                 _NetworkMgr.OnRawPacketSent += HandleRawPacket;
@@ -29,7 +42,7 @@ namespace MyGame.Server
 
         void Start()
         {
-            _NetworkMgr = MyNetworkManager.Instance;
+            StartCoroutine(ServerTickLoop());
         }
 
         private void OnDestroy()
@@ -53,9 +66,44 @@ namespace MyGame.Server
         // 클라이언트(InputBufferManager)로부터 패킷 수신 (시뮬레이션)
         public void ReceiveInputFromClient(List<InputPacket> packets)
         {
+            // 네트워크 쪽으로 받은 패킷은 서버 내부 큐에 쌓아 두고,
+            // 고정 틱(서버 틱)에서 처리합니다.
             foreach (var packet in packets)
             {
+                _incomingPackets.Enqueue(packet);
+            }
+        }
+
+        private System.Collections.IEnumerator ServerTickLoop()
+        {
+            while (true)
+            {
+                ProcessTick();
+                yield return new WaitForSeconds(serverTickInterval);
+            }
+        }
+
+        private void ProcessTick()
+        {
+            _serverTick++;
+
+            int count = _incomingPackets.Count;
+            for (int i = 0; i < count; i++)
+            {
+                var packet = _incomingPackets.Dequeue();
                 ProcessInput(packet);
+            }
+
+            // 서버 틱마다 로컬 테스트용 봇 위치를 업데이트
+            if (simulateBot)
+            {
+                UpdateBot(serverTickInterval);
+            }
+
+            // 전체 플레이어 상태를 브로드캐스트
+            foreach (var kvp in _playerPositions)
+            {
+                BroadcastState(kvp.Key, _serverTick);
             }
         }
 
@@ -70,15 +118,24 @@ namespace MyGame.Server
             // 실제 서버라면 여기서 '이동 거리가 물리적으로 가능한가?' 등을 체크합니다.
             Vector3 moveDir = new Vector3(packet.Horizontal, 0, packet.Vertical).normalized;
 
-            // 서버 틱(30fps) 기준으로 위치 계산
-            // 실제 서버라면 여기서 deltaTime 대신 고정 틱(Tick) 시간을 사용함
-            _playerPositions[packet.PlayerId] += moveDir * _serverMoveSpeed * 0.033f;
+            // 고정 틱 간격으로 이동 결과 갱신
+            _playerPositions[packet.PlayerId] += moveDir * _serverMoveSpeed * serverTickInterval;
 
-            // 계산된 공인 위치를 로그로 출력 (추후 클라이언트에게 브로드캐스팅)
-            Debug.Log($"[Server] ID:{packet.PlayerId} / Tick:{packet.Tick} / AuthPos:{_playerPositions[packet.PlayerId]}");
+            Debug.Log($"[Server] Tick:{_serverTick} / ID:{packet.PlayerId} / AuthPos:{_playerPositions[packet.PlayerId]}");
+        }
 
-            // 결과 브로드캐스팅 시뮬레이션
-            BroadcastState(packet.PlayerId, packet.Tick);
+        private void UpdateBot(float deltaTime)
+        {
+            if (!_playerPositions.ContainsKey(_botId))
+            {
+                _playerPositions[_botId] = new Vector3(2, 0, 0);
+            }
+
+            // 원을 그리며 이동하는 간단한 봇
+            _botAngle += deltaTime;
+            float radius = 3f;
+            Vector3 center = Vector3.zero;
+            _playerPositions[_botId] = center + new Vector3(Mathf.Cos(_botAngle), 0, Mathf.Sin(_botAngle)) * radius;
         }
 
         private void BroadcastState(string playerId, uint tick)

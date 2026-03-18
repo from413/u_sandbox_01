@@ -18,6 +18,7 @@ namespace MyGame.Runtime.Modules
         private Queue<InputPacket> _inputBuffer = new Queue<InputPacket>();
         private List<InputHistoryEntry> _inputHistory = new List<InputHistoryEntry>(); // 서버 보정용 히스토리
         private uint _currentTick = 0;
+        private uint _lastReconciledTick = 0;
 
         [SerializeField] private float moveSpeed = 5f; // 로컬 예측 계산용
 
@@ -156,17 +157,44 @@ namespace MyGame.Runtime.Modules
         {
             if (_localActor == null || state.PlayerId != _NetworkMgr.LocalSession.PlayerId) return;
 
-            // 서버로부터 받은 공인 위치
+            // 같은 틱에 대해 여러번 보정받는 것을 방지
+            if (state.LastProcessedTick <= _lastReconciledTick) return;
+            _lastReconciledTick = state.LastProcessedTick;
+
+            // 서버가 계산한 공인 위치
             Vector3 serverAuthPosition = state.Position;
-            Vector3 currentPredictedPosition = _localActor.transform.position;
 
-            // 오차 계산
-            float positionError = Vector3.Distance(currentPredictedPosition, serverAuthPosition);
+            // 로컬 예측 위치를 서버 위치로 되돌린 뒤, 서버가 처리한 틱 이후 입력들을 재적용(재생)
+            _localActor.SetPosition(serverAuthPosition);
 
-            // 서버 위치를 목표로 설정 (SmoothDamp로 부드럽게 보정)
-            _targetPosition = serverAuthPosition;
+            int replayStartIndex = _inputHistory.FindIndex(entry => entry.Tick > state.LastProcessedTick);
+            if (replayStartIndex >= 0)
+            {
+                for (int i = replayStartIndex; i < _inputHistory.Count; i++)
+                {
+                    var entry = _inputHistory[i];
+                    _localActor.ApplyInput(entry.InputPacket, sendInterval);
+                    entry.PredictedPosition = _localActor.transform.position;
+                    _inputHistory[i] = entry;
+                }
 
-            Debug.Log($"[Correction] Tick:{state.LastProcessedTick} / Predicted:{currentPredictedPosition} / Server:{serverAuthPosition} / Error:{positionError:F3}");
+                // 재생이 끝난 위치를 새로운 보정 목표로 설정
+                _targetPosition = _localActor.transform.position;
+
+                // 서버가 처리한 틱까지의 히스토리는 더 이상 필요 없음
+                if (replayStartIndex > 0)
+                {
+                    _inputHistory.RemoveRange(0, replayStartIndex);
+                }
+            }
+            else
+            {
+                // 서버가 처리한 틱 이후 입력이 없다면 바로 보정
+                _targetPosition = serverAuthPosition;
+            }
+
+            float positionError = Vector3.Distance(_localActor.transform.position, serverAuthPosition);
+            Debug.Log($"[Correction] Tick:{state.LastProcessedTick} / Error:{positionError:F3} / Replayed:{_inputHistory.Count} inputs");
         }
     }
 }

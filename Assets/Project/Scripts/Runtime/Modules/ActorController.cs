@@ -6,11 +6,19 @@ namespace MyGame.Runtime.Modules
     {
         [SerializeField] private float moveSpeed = 5f;
 
+        public float MoveSpeed => moveSpeed;
+
         // InputBufferManager로부터 패킷을 전달받아 실행
         public void ApplyInput(InputPacket packet)
         {
+            ApplyInput(packet, Time.deltaTime);
+        }
+
+        // deltaTime을 명시적으로 전달할 수 있어 재생(replay) 및 고정 틱 시뮬레이션에서 일관된 결과를 얻습니다.
+        public void ApplyInput(InputPacket packet, float deltaTime)
+        {
             Vector3 moveDirection = new Vector3(packet.Horizontal, 0, packet.Vertical).normalized;
-            transform.Translate(moveDirection * moveSpeed * Time.deltaTime);
+            transform.Translate(moveDirection * moveSpeed * deltaTime);
 
             if (packet.IsJump)
             {
